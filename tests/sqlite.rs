@@ -1,4 +1,7 @@
-use crab::{prelude::*, storage::Storage};
+use crab::{
+    prelude::*,
+    storage::{Page, Storage},
+};
 use refinery::config::{Config, ConfigDbType};
 use std::fs::File;
 use tempfile::{tempdir, TempDir};
@@ -18,15 +21,38 @@ pub async fn count_number_of_pages_in_database() -> Result<()> {
 }
 
 #[test]
-pub async fn read_and_write_pages_to_database() -> Result<()> {
+pub async fn write_and_read_pages_to_database() -> Result<()> {
     let storage = new_storage().await?;
     let storage = storage.as_ref();
 
-    let page = "http://test.com";
-    let new_id = storage.register_seed_page(page).await?;
+    let url = "http://test.com";
+    let new_id = storage.register_seed_page(url).await?;
     assert_eq!(new_id, 1);
+
     let pages = storage.read_fresh_pages(10).await?;
-    assert_eq!(pages, vec![page.to_owned()]);
+
+    let expected_page = Page {
+        id: new_id,
+        url: url.to_owned(),
+    };
+    assert_eq!(pages.len(), 1);
+    assert_eq!(pages[0], expected_page);
+
+    Ok(())
+}
+
+#[test]
+pub async fn write_and_read_page_content() -> Result<()> {
+    let storage = new_storage().await?;
+    let storage = storage.as_ref();
+
+    let page_id = storage.register_seed_page("http://test.com").await?;
+
+    let expected_html = "<html />";
+    storage.write_page_content(page_id, expected_html).await?;
+    let html = storage.read_page_content(page_id).await?;
+
+    assert_eq!(html, Some(expected_html.to_owned()));
 
     Ok(())
 }
