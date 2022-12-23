@@ -1,19 +1,32 @@
-use std::fs::File;
-
-use crab::prelude::*;
-use crab::storage::Storage;
+use crab::{prelude::*, storage::Storage};
 use refinery::config::{Config, ConfigDbType};
+use std::fs::File;
 use tempfile::{tempdir, TempDir};
+use tokio::test;
 
 mod embedded {
     use refinery::embed_migrations;
     embed_migrations!("./migrations");
 }
 
-#[tokio::test]
+#[test]
 pub async fn count_number_of_pages_in_database() -> Result<()> {
     let storage = new_storage().await?;
-    assert_eq!(0, storage.as_ref().count_pages().await?);
+    assert_eq!(0, storage.as_ref().count_all_pages().await?);
+
+    Ok(())
+}
+
+#[test]
+pub async fn read_and_write_pages_to_database() -> Result<()> {
+    let storage = new_storage().await?;
+    let storage = storage.as_ref();
+
+    let page = "http://test.com";
+    let new_id = storage.register_seed_page(page).await?;
+    assert_eq!(new_id, 1);
+    let pages = storage.read_fresh_pages(10).await?;
+    assert_eq!(pages, vec![page.to_owned()]);
 
     Ok(())
 }
