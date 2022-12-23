@@ -12,8 +12,8 @@ impl Storage {
         Ok(Self { connection })
     }
 
-    pub async fn version(&self) -> Result<String> {
-        let row: (String,) = sqlx::query_as("SELECT sqlite_version()")
+    pub async fn count_pages(&self) -> Result<i64> {
+        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM pages")
             .fetch_one(&self.connection)
             .await?;
         Ok(row.0)
