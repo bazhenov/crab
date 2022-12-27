@@ -1,17 +1,43 @@
+use clap::Parser;
 use crab::{
     prelude::*,
     storage::{Page, Storage},
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Opts {
+    #[arg(short, long, value_name = "file", default_value = "./db.sqlite")]
+    database: String,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+enum Commands {
+    RunCrawler {},
+    AddSeed { seed: String },
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
 
-    let storage = Storage::new("file:./db.sqlite").await?;
-    let crawler = Crawler::new(storage)?;
+    let opts = Opts::parse();
 
-    crawler.run().await?;
+    match opts.command {
+        Commands::RunCrawler {} => {
+            let storage = Storage::new(&opts.database).await?;
+            Crawler::new(storage)?.run().await?;
+        }
+        Commands::AddSeed { seed } => {
+            let storage = Storage::new(&opts.database).await?;
+            storage.register_seed_page(&seed).await?;
+        }
+    }
 
     Ok(())
 }
