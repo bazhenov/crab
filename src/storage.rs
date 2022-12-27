@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
+use url::Url;
 
 pub struct Storage(SqlitePool);
 
@@ -25,15 +26,27 @@ impl Storage {
         Ok(new_id)
     }
 
+    pub async fn register_page(&self, url: &str, depth: i32) -> Result<i64> {
+        let new_id = sqlx::query("INSERT INTO pages (url, depth) VALUES (?, ?)")
+            .bind(url)
+            .bind(depth)
+            .execute(&self.0)
+            .await?
+            .last_insert_rowid();
+        Ok(new_id)
+    }
+
     pub async fn read_fresh_pages(&self, count: u16) -> Result<Vec<Page>> {
-        let pages: Vec<Page> =
-            sqlx::query_as("SELECT id, url FROM pages WHERE content IS NULL LIMIT ?")
+        let result_set: Vec<(i64, String, i32)> =
+            sqlx::query_as("SELECT id, url, depth FROM pages WHERE content IS NULL LIMIT ?")
                 .bind(count)
                 .fetch_all(&self.0)
-                .await?
-                .into_iter()
-                .map(|r: (i64, String)| Page { id: r.0, url: r.1 })
-                .collect::<Vec<_>>();
+                .await?;
+        let mut pages = vec![];
+        for (id, url, depth) in result_set {
+            let url = Url::parse(&url)?;
+            pages.push(Page { id, url, depth });
+        }
         Ok(pages)
     }
 
@@ -44,6 +57,20 @@ impl Storage {
             .execute(&self.0)
             .await?;
         Ok(())
+    }
+
+    pub async fn read_page(&self, id: i64) -> Result<Option<Page>> {
+        let content: Option<(i64, String, i32)> =
+            sqlx::query_as("SELECT id, url, depth FROM pages WHERE id = ?")
+                .bind(id)
+                .fetch_optional(&self.0)
+                .await?;
+        if let Some((id, url, depth)) = content {
+            let url = Url::parse(&url)?;
+            Ok(Some(Page { id, url, depth }))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn read_page_content(&self, id: i64) -> Result<Option<String>> {
@@ -58,5 +85,6 @@ impl Storage {
 #[derive(Debug, PartialEq)]
 pub struct Page {
     pub id: i64,
-    pub url: String,
+    pub url: Url,
+    pub depth: i32,
 }

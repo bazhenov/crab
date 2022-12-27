@@ -1,5 +1,6 @@
 use prelude::*;
 pub mod storage;
+use storage::Page;
 use url::Url;
 
 pub mod prelude {
@@ -20,10 +21,10 @@ pub mod prelude {
 
 pub type Link = String;
 pub trait Navigator {
-    fn next_pages(content: &str) -> Result<Vec<Link>>;
+    fn next_pages(page: &Page, content: &str) -> Result<Vec<Url>>;
 }
 
-fn normalize_url(base_url: &Url, link: &str) -> Result<Url> {
+pub fn normalize_url(base_url: &Url, link: &str) -> Result<Url> {
     Ok(base_url.join(link)?)
 }
 

@@ -6,6 +6,7 @@ use refinery::config::{Config, ConfigDbType};
 use std::fs::File;
 use tempfile::{tempdir, TempDir};
 use tokio::test;
+use url::Url;
 
 mod embedded {
     use refinery::embed_migrations;
@@ -33,7 +34,8 @@ pub async fn write_and_read_pages_to_database() -> Result<()> {
 
     let expected_page = Page {
         id: new_id,
-        url: url.to_owned(),
+        url: Url::parse(url)?,
+        depth: 0,
     };
     assert_eq!(pages.len(), 1);
     assert_eq!(pages[0], expected_page);

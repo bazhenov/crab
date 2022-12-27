@@ -47,7 +47,11 @@ async fn main() -> Result<()> {
                 .read_page_content(page_id)
                 .await?
                 .ok_or(Error::PageNotFound(page_id))?;
-            let links = CpuDatabase::next_pages(&content)?;
+            let page = storage
+                .read_page(page_id)
+                .await?
+                .ok_or(Error::PageNotFound(page_id))?;
+            let links = CpuDatabase::next_pages(&page, &content)?;
             for link in links {
                 println!("{}", link);
             }
@@ -88,7 +92,15 @@ impl Crawler {
                 if let Some(completed) = futures.next().await {
                     let (page, response) = completed?;
                     match response {
-                        Ok(content) => self.storage.write_page_content(page.id, &content).await?,
+                        Ok(content) => {
+                            self.storage.write_page_content(page.id, &content).await?;
+                            let links = CpuDatabase::next_pages(&page, &content)?;
+                            for link in links {
+                                self.storage
+                                    .register_page(link.as_str(), page.depth + 1)
+                                    .await?;
+                            }
+                        }
                         Err(e) => {
                             warn!("Unable to download: {}", page.url);
                             warn!("{}", e);
@@ -104,7 +116,7 @@ impl Crawler {
 
 async fn fetch_content(page: Page) -> (Page, Result<String>) {
     trace!("Strating loading of: {}", &page.url);
-    let response = download(&page.url).await;
+    let response = download(&page.url.to_string()).await;
     trace!("Finished loading of: {}", &page.url);
     (page, response)
 }
