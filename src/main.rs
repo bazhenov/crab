@@ -24,6 +24,7 @@ enum Commands {
     RunCrawler {},
     AddSeed { seed: String },
     Navigate { page_id: i64 },
+    RunKv { page_id: i64 },
 }
 
 #[tokio::main]
@@ -55,6 +56,15 @@ async fn main() -> Result<()> {
             for link in links {
                 println!("{}", link);
             }
+        }
+        Commands::RunKv { page_id } => {
+            let storage = Storage::new(&opts.database).await?;
+            let content = storage
+                .read_page_content(page_id)
+                .await?
+                .ok_or(Error::PageNotFound(page_id))?;
+            let kv = CpuDatabase::kv(&content)?;
+            println!("{:#?}", kv);
         }
     }
 

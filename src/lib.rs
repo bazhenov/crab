@@ -1,4 +1,5 @@
 use prelude::*;
+use std::collections::HashMap;
 pub mod storage;
 use storage::Page;
 use url::Url;
@@ -22,6 +23,8 @@ pub mod prelude {
 pub type Link = String;
 pub trait Navigator {
     fn next_pages(page: &Page, content: &str) -> Result<Vec<Url>>;
+
+    fn kv(content: &str) -> Result<HashMap<String, String>>;
 }
 
 pub fn normalize_url(base_url: &Url, link: &str) -> Result<Url> {
