@@ -1,9 +1,12 @@
 use clap::Parser;
+use cpu_database::CpuDatabase;
 use crab::{
     prelude::*,
     storage::{Page, Storage},
+    Navigator,
 };
 use futures::{stream::FuturesUnordered, StreamExt};
+mod cpu_database;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -20,6 +23,7 @@ struct Opts {
 enum Commands {
     RunCrawler {},
     AddSeed { seed: String },
+    Navigate { page_id: i64 },
 }
 
 #[tokio::main]
@@ -36,6 +40,17 @@ async fn main() -> Result<()> {
         Commands::AddSeed { seed } => {
             let storage = Storage::new(&opts.database).await?;
             storage.register_seed_page(&seed).await?;
+        }
+        Commands::Navigate { page_id } => {
+            let storage = Storage::new(&opts.database).await?;
+            let content = storage
+                .read_page_content(page_id)
+                .await?
+                .ok_or(Error::PageNotFound(page_id))?;
+            let links = CpuDatabase::next_pages(&content)?;
+            for link in links {
+                println!("{}", link);
+            }
         }
     }
 
