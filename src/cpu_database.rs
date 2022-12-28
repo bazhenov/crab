@@ -10,7 +10,7 @@ impl Navigator for CpuDatabase {
         let document = Html::parse_document(content);
 
         let selector =
-            Selector::parse("table.processors td a").map_err(|_e| Error::InvalidSelector)?;
+            Selector::parse("table.processors td a").map_err(|_e| AppError::InvalidSelector)?;
 
         let mut links = vec![];
         for f in document.select(&selector) {
@@ -24,9 +24,9 @@ impl Navigator for CpuDatabase {
     fn kv(content: &str) -> Result<HashMap<String, String>> {
         let document = Html::parse_document(content);
         let row_selector =
-            Selector::parse(".details table tr").map_err(|_e| Error::InvalidSelector)?;
-        let th_selector = Selector::parse("th").map_err(|_e| Error::InvalidSelector)?;
-        let td_selector = Selector::parse("td").map_err(|_e| Error::InvalidSelector)?;
+            Selector::parse(".details table tr").map_err(|_e| AppError::InvalidSelector)?;
+        let th_selector = Selector::parse("th").map_err(|_e| AppError::InvalidSelector)?;
+        let td_selector = Selector::parse("td").map_err(|_e| AppError::InvalidSelector)?;
 
         let mut kv = HashMap::new();
         for f in document.select(&row_selector) {

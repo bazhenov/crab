@@ -17,6 +17,15 @@ impl Storage {
         Ok(row.0)
     }
 
+    pub async fn list_downloaded_pages(&self) -> Result<Vec<i64>> {
+        let row: Vec<(i64,)> =
+            sqlx::query_as("SELECT id FROM pages WHERE content IS NOT NULL AND content != 'Error'")
+                .fetch_all(&self.0)
+                .await?;
+        let row = row.into_iter().map(|(id,)| id).collect::<Vec<_>>();
+        Ok(row)
+    }
+
     pub async fn register_seed_page(&self, url: &str) -> Result<i64> {
         let new_id = sqlx::query("INSERT INTO pages (url) VALUES (?)")
             .bind(url)

@@ -3,9 +3,11 @@ use cpu_database::CpuDatabase;
 use crab::{
     prelude::*,
     storage::{Page, Storage},
+    table::Table,
     Navigator,
 };
 use futures::{stream::FuturesUnordered, StreamExt};
+use std::io::stdout;
 mod cpu_database;
 
 #[derive(Parser, Debug)]
@@ -25,6 +27,7 @@ enum Commands {
     AddSeed { seed: String },
     Navigate { page_id: i64 },
     RunKv { page_id: i64 },
+    ExportCsv,
 }
 
 #[tokio::main]
@@ -47,11 +50,11 @@ async fn main() -> Result<()> {
             let content = storage
                 .read_page_content(page_id)
                 .await?
-                .ok_or(Error::PageNotFound(page_id))?;
+                .ok_or(AppError::PageNotFound(page_id))?;
             let page = storage
                 .read_page(page_id)
                 .await?
-                .ok_or(Error::PageNotFound(page_id))?;
+                .ok_or(AppError::PageNotFound(page_id))?;
             let links = CpuDatabase::next_pages(&page, &content)?;
             for link in links {
                 println!("{}", link);
@@ -62,9 +65,23 @@ async fn main() -> Result<()> {
             let content = storage
                 .read_page_content(page_id)
                 .await?
-                .ok_or(Error::PageNotFound(page_id))?;
+                .ok_or(AppError::PageNotFound(page_id))?;
             let kv = CpuDatabase::kv(&content)?;
             println!("{:#?}", kv);
+        }
+        Commands::ExportCsv => {
+            let storage = Storage::new(&opts.database).await?;
+            let pages = storage.list_downloaded_pages().await?;
+            let mut table = Table::new();
+            for page in pages {
+                if let Some(content) = storage.read_page_content(page).await? {
+                    let kv = CpuDatabase::kv(&content)?;
+                    if !kv.is_empty() {
+                        table.add_row(kv);
+                    }
+                }
+            }
+            table.write(&mut stdout())?;
         }
     }
 

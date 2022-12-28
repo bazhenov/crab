@@ -1,17 +1,19 @@
 use prelude::*;
 use std::collections::HashMap;
-pub mod storage;
 use storage::Page;
 use url::Url;
+
+pub mod storage;
+pub mod table;
 
 pub mod prelude {
 
     pub type Result<T> = anyhow::Result<T>;
+    pub type StdResult<T, E> = std::result::Result<T, E>;
     pub use log::{debug, error, trace, warn};
-    use thiserror::Error as ThisError;
 
-    #[derive(Debug, ThisError)]
-    pub enum Error {
+    #[derive(Debug, thiserror::Error)]
+    pub enum AppError {
         #[error("Invalid Selector")]
         InvalidSelector,
 
