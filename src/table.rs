@@ -1,10 +1,6 @@
-use csv::Writer;
-
 use crate::prelude::*;
-use std::{
-    collections::HashMap,
-    io::{Cursor, Write},
-};
+use csv::Writer;
+use std::{collections::HashMap, io::Write};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -62,19 +58,20 @@ impl Table {
 
         Ok(())
     }
-
-    fn to_csv(&self) -> Result<String> {
-        let mut cursor = Cursor::new(Vec::new());
-        self.write(&mut cursor)?;
-        let vec = cursor.into_inner();
-        Ok(String::from_utf8(vec)?)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use literal::{map, MapLiteral};
+    use std::io::Cursor;
+
+    fn to_csv(table: Table) -> Result<String> {
+        let mut cursor = Cursor::new(Vec::new());
+        table.write(&mut cursor)?;
+        let vec = cursor.into_inner();
+        Ok(String::from_utf8(vec)?)
+    }
 
     #[test]
     fn check_table_add_column() -> Result<()> {
@@ -83,7 +80,7 @@ mod tests {
         table.add_row(map! {"bar": "baz"});
 
         let expected_csv = "foo,bar\nbar,\n,baz\n";
-        assert_eq!(expected_csv, table.to_csv()?);
+        assert_eq!(expected_csv, to_csv(table)?);
         Ok(())
     }
 }
