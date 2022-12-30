@@ -1,8 +1,27 @@
 use crate::prelude::*;
+use int_enum::IntEnum;
 use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
 use url::Url;
 
 pub struct Storage(SqlitePool);
+
+#[repr(u8)]
+#[derive(Debug, PartialEq, Clone, Copy, IntEnum)]
+pub enum PageStatus {
+    NotDownloaded = 1,
+    Downloaded = 2,
+    Failed = 3,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Page {
+    pub id: i64,
+    pub url: Url,
+    pub depth: u16,
+    pub status: PageStatus,
+}
+
+type PageRow = (i64, String, u16, u8);
 
 impl Storage {
     pub async fn new(url: &str) -> Result<Self> {
@@ -35,7 +54,7 @@ impl Storage {
         Ok(new_id)
     }
 
-    pub async fn register_page(&self, url: &str, depth: i32) -> Result<i64> {
+    pub async fn register_page(&self, url: &str, depth: u16) -> Result<i64> {
         let new_id = sqlx::query("INSERT INTO pages (url, depth) VALUES (?, ?)")
             .bind(url)
             .bind(depth)
@@ -46,22 +65,31 @@ impl Storage {
     }
 
     pub async fn read_fresh_pages(&self, count: u16) -> Result<Vec<Page>> {
-        let result_set: Vec<(i64, String, i32)> =
-            sqlx::query_as("SELECT id, url, depth FROM pages WHERE content IS NULL LIMIT ?")
-                .bind(count)
-                .fetch_all(&self.0)
-                .await?;
+        let query = "SELECT id, url, depth, status FROM pages WHERE content IS NULL LIMIT ?";
+        let result_set: Vec<PageRow> = sqlx::query_as(query).bind(count).fetch_all(&self.0).await?;
         let mut pages = vec![];
-        for (id, url, depth) in result_set {
-            let url = Url::parse(&url)?;
-            pages.push(Page { id, url, depth });
+        for row in result_set {
+            if let Some(page) = create_page(Some(row))? {
+                pages.push(page);
+            }
         }
         Ok(pages)
     }
 
+    pub async fn mark_page_as_failed(&self, page_id: i64) -> Result<()> {
+        sqlx::query("UPDATE pages SET status = ? WHERE id = ?")
+            .bind(PageStatus::Failed.int_value())
+            .bind(page_id)
+            .execute(&self.0)
+            .await?;
+        Ok(())
+    }
+
+    /// Writes page content in storage and marks page as [`PageStatus::Downloaded`]
     pub async fn write_page_content(&self, page_id: i64, content: &str) -> Result<()> {
-        sqlx::query("UPDATE pages SET content = ? WHERE id = ?")
+        sqlx::query("UPDATE pages SET content = ?, status = ? WHERE id = ?")
             .bind(content)
+            .bind(PageStatus::Downloaded.int_value())
             .bind(page_id)
             .execute(&self.0)
             .await?;
@@ -69,17 +97,12 @@ impl Storage {
     }
 
     pub async fn read_page(&self, id: i64) -> Result<Option<Page>> {
-        let content: Option<(i64, String, i32)> =
-            sqlx::query_as("SELECT id, url, depth FROM pages WHERE id = ?")
+        let content: Option<PageRow> =
+            sqlx::query_as("SELECT id, url, depth, status FROM pages WHERE id = ?")
                 .bind(id)
                 .fetch_optional(&self.0)
                 .await?;
-        if let Some((id, url, depth)) = content {
-            let url = Url::parse(&url)?;
-            Ok(Some(Page { id, url, depth }))
-        } else {
-            Ok(None)
-        }
+        create_page(content)
     }
 
     pub async fn read_page_content(&self, id: i64) -> Result<Option<String>> {
@@ -91,9 +114,23 @@ impl Storage {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Page {
-    pub id: i64,
-    pub url: Url,
-    pub depth: i32,
+/// Creates pages from tuple of its attributes
+///
+/// - page_id - i64
+/// - url - String
+/// - depth - u16
+/// - status - u8
+fn create_page(row: Option<PageRow>) -> Result<Option<Page>> {
+    if let Some((id, url, depth, status)) = row {
+        let url = Url::parse(&url)?;
+        let status = PageStatus::from_int(status)?;
+        Ok(Some(Page {
+            id,
+            url,
+            depth,
+            status,
+        }))
+    } else {
+        Ok(None)
+    }
 }

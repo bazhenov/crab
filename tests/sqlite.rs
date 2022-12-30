@@ -1,6 +1,6 @@
 use crab::{
     prelude::*,
-    storage::{Page, Storage},
+    storage::{Page, PageStatus, Storage},
 };
 use refinery::config::{Config, ConfigDbType};
 use std::fs::File;
@@ -36,6 +36,7 @@ pub async fn write_and_read_pages_to_database() -> Result<()> {
         id: new_id,
         url: Url::parse(url)?,
         depth: 0,
+        status: PageStatus::NotDownloaded,
     };
     assert_eq!(pages.len(), 1);
     assert_eq!(pages[0], expected_page);
@@ -52,9 +53,26 @@ pub async fn write_and_read_page_content() -> Result<()> {
 
     let expected_html = "<html />";
     storage.write_page_content(page_id, expected_html).await?;
-    let html = storage.read_page_content(page_id).await?;
 
+    let html = storage.read_page_content(page_id).await?;
     assert_eq!(html, Some(expected_html.to_owned()));
+
+    let page = storage.read_page(page_id).await?.unwrap();
+    assert_eq!(page.status, PageStatus::Downloaded);
+
+    Ok(())
+}
+
+#[test]
+pub async fn mark_page_as_failed() -> Result<()> {
+    let storage = new_storage().await?;
+    let storage = storage.as_ref();
+
+    let page_id = storage.register_seed_page("http://test.com").await?;
+    storage.mark_page_as_failed(page_id).await?;
+
+    let page = storage.read_page(page_id).await?.unwrap();
+    assert_eq!(page.status, PageStatus::Failed);
 
     Ok(())
 }

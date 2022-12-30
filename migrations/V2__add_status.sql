@@ -1,0 +1,1 @@
+ALTER TABLE pages ADD status INT CHECK (status IN (1, 2, 3)) DEFAULT 1;

@@ -7,7 +7,8 @@ use crab::{
     Navigator,
 };
 use futures::{stream::FuturesUnordered, StreamExt};
-use std::io::stdout;
+use std::{io::stdout, time::Duration};
+use tokio::time::sleep;
 mod cpu_database;
 
 #[derive(Parser, Debug)]
@@ -99,6 +100,7 @@ impl Crawler {
 
     pub async fn run(&self) -> Result<()> {
         let n_max = 2;
+        let delay = Duration::from_secs(3);
         let mut futures = FuturesUnordered::new();
         let mut pages = vec![];
         loop {
@@ -111,7 +113,7 @@ impl Crawler {
 
             while futures.len() < n_max && !pages.is_empty() {
                 let next_page = pages.swap_remove(0);
-                let future = tokio::spawn(fetch_content(next_page));
+                let future = tokio::spawn(fetch_content(next_page, delay));
                 futures.push(future);
             }
 
@@ -130,8 +132,8 @@ impl Crawler {
                         }
                         Err(e) => {
                             warn!("Unable to download: {}", page.url);
-                            warn!("{}", e);
-                            self.storage.write_page_content(page.id, "Error").await?
+                            debug!("{}", e);
+                            self.storage.mark_page_as_failed(page.id).await?;
                         }
                     }
                 }
@@ -141,10 +143,11 @@ impl Crawler {
     }
 }
 
-async fn fetch_content(page: Page) -> (Page, Result<String>) {
+async fn fetch_content(page: Page, delay: Duration) -> (Page, Result<String>) {
     trace!("Strating loading of: {}", &page.url);
     let response = download(&page.url.to_string()).await;
     trace!("Finished loading of: {}", &page.url);
+    sleep(delay).await;
     (page, response)
 }
 
