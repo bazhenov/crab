@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
             Crawler::new(storage)?.run().await?;
         }
         Commands::AddSeed { seed } => {
-            storage.register_seed_page(&seed).await?;
+            storage.register_page(&seed, 0).await?;
         }
         Commands::Navigate { page_id } => {
             let content = storage

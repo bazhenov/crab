@@ -78,15 +78,6 @@ impl Storage {
         Ok(pages)
     }
 
-    pub async fn register_seed_page(&self, url: &str) -> Result<i64> {
-        let new_id = sqlx::query("INSERT INTO pages (url) VALUES (?)")
-            .bind(url)
-            .execute(&self.0)
-            .await?
-            .last_insert_rowid();
-        Ok(new_id)
-    }
-
     pub async fn register_page(&self, url: &str, depth: u16) -> Result<i64> {
         let new_id = sqlx::query("INSERT INTO pages (url, depth) VALUES (?, ?)")
             .bind(url)
