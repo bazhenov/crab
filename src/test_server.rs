@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-
 use crab::{normalize_url, prelude::*, storage::Page, Navigator};
 use scraper::{Html, Selector};
+use std::collections::HashMap;
 use url::Url;
+
 pub(crate) struct TestServer;
 
 impl Navigator for TestServer {

@@ -195,6 +195,7 @@ dependencies = [
  "env_logger",
  "futures",
  "int-enum",
+ "lazy_static",
  "literal",
  "log",
  "refinery",

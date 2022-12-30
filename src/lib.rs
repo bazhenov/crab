@@ -22,7 +22,6 @@ pub mod prelude {
     }
 }
 
-pub type Link = String;
 pub trait Navigator {
     fn next_pages(page: &Page, content: &str) -> Result<Vec<Url>>;
 

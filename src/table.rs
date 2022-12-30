@@ -11,19 +11,13 @@ pub enum Error {
     CsvError(#[from] csv::Error),
 }
 
+#[derive(Default)]
 pub struct Table {
     columns: Vec<String>,
     rows: Vec<Vec<(usize, String)>>,
 }
 
 impl Table {
-    pub fn new() -> Self {
-        Self {
-            columns: vec![],
-            rows: vec![],
-        }
-    }
-
     pub fn add_row(&mut self, row: HashMap<String, String>) {
         let mut row_as_vec = vec![];
         for (key, value) in row.into_iter() {
@@ -75,7 +69,7 @@ mod tests {
 
     #[test]
     fn check_table_add_column() -> Result<()> {
-        let mut table = Table::new();
+        let mut table = Table::default();
         table.add_row(map! {"foo": "bar"});
         table.add_row(map! {"bar": "baz"});
 

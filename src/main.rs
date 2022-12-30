@@ -81,14 +81,15 @@ where
             println!("{:#?}", kv);
         }
         Commands::ExportCsv => {
-            let pages = storage.list_downloaded_pages().await?;
-            let mut table = Table::new();
-            for page in pages {
-                if let Some(content) = storage.read_page_content(page).await? {
-                    let kv = T::kv(&content)?;
-                    if !kv.is_empty() {
-                        table.add_row(kv);
-                    }
+            let mut table = Table::default();
+            for page in storage.list_downloaded_pages().await? {
+                let content = storage
+                    .read_page_content(page)
+                    .await?
+                    .ok_or(AppError::PageNotFound(page))?;
+                let kv = T::kv(&content)?;
+                if !kv.is_empty() {
+                    table.add_row(kv);
                 }
             }
             table.write(&mut stdout())?;
@@ -163,7 +164,7 @@ impl Crawler {
 async fn fetch_content(page: Page, delay: Duration) -> (Page, Result<String>) {
     trace!("Starting: {}", &page.url);
     let instant = Instant::now();
-    let response = download(&page.url.to_string()).await;
+    let response = download(page.url.as_ref()).await;
     let duration = instant.elapsed();
     info!(
         "Downloaded in {:.1}s: {}",
