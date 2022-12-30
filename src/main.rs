@@ -125,7 +125,7 @@ impl Crawler {
                 futures.push(future);
             }
 
-            // COMPLETEING PHASE
+            // COMPLETING PHASE
             if !futures.is_empty() {
                 if let Some(completed) = futures.next().await {
                     let (page, response) = completed?;
