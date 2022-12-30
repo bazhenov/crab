@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use int_enum::IntEnum;
 use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
+use std::fmt;
 use url::Url;
 
 pub struct Storage(SqlitePool);
@@ -13,12 +14,32 @@ pub enum PageStatus {
     Failed = 3,
 }
 
+impl fmt::Display for PageStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PageStatus::NotDownloaded => write!(f, "NotDownloaded"),
+            PageStatus::Downloaded => write!(f, "Downloaded"),
+            PageStatus::Failed => write!(f, "Failed"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Page {
     pub id: i64,
     pub url: Url,
     pub depth: u16,
     pub status: PageStatus,
+}
+
+impl fmt::Display for Page {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Page #{:3}   depth {:3}   {:10}     {}",
+            self.id, self.depth, self.status, self.url
+        )
+    }
 }
 
 type PageRow = (i64, String, u16, u8);
@@ -45,6 +66,18 @@ impl Storage {
         Ok(row)
     }
 
+    pub async fn list_pages(&self) -> Result<Vec<Page>> {
+        let query = "SELECT id, url, depth, status FROM pages";
+        let result_set: Vec<PageRow> = sqlx::query_as(query).fetch_all(&self.0).await?;
+        let mut pages = vec![];
+        for row in result_set {
+            if let Some(page) = create_page(Some(row))? {
+                pages.push(page);
+            }
+        }
+        Ok(pages)
+    }
+
     pub async fn register_seed_page(&self, url: &str) -> Result<i64> {
         let new_id = sqlx::query("INSERT INTO pages (url) VALUES (?)")
             .bind(url)
@@ -64,9 +97,13 @@ impl Storage {
         Ok(new_id)
     }
 
-    pub async fn read_fresh_pages(&self, count: u16) -> Result<Vec<Page>> {
-        let query = "SELECT id, url, depth, status FROM pages WHERE content IS NULL LIMIT ?";
-        let result_set: Vec<PageRow> = sqlx::query_as(query).bind(count).fetch_all(&self.0).await?;
+    pub async fn list_not_downloaded_pages(&self, count: u16) -> Result<Vec<Page>> {
+        let query = "SELECT id, url, depth, status FROM pages WHERE status = ? LIMIT ?";
+        let result_set: Vec<PageRow> = sqlx::query_as(query)
+            .bind(PageStatus::NotDownloaded.int_value())
+            .bind(count)
+            .fetch_all(&self.0)
+            .await?;
         let mut pages = vec![];
         for row in result_set {
             if let Some(page) = create_page(Some(row))? {

@@ -30,7 +30,7 @@ pub async fn write_and_read_pages_to_database() -> Result<()> {
     let new_id = storage.register_seed_page(url).await?;
     assert_eq!(new_id, 1);
 
-    let pages = storage.read_fresh_pages(10).await?;
+    let pages = storage.list_not_downloaded_pages(10).await?;
 
     let expected_page = Page {
         id: new_id,

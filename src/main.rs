@@ -29,6 +29,7 @@ enum Commands {
     Navigate { page_id: i64 },
     RunKv { page_id: i64 },
     ExportCsv,
+    ListPages,
 }
 
 #[tokio::main]
@@ -37,17 +38,16 @@ async fn main() -> Result<()> {
 
     let opts = Opts::parse();
 
+    let storage = Storage::new(&opts.database).await?;
+
     match opts.command {
         Commands::RunCrawler {} => {
-            let storage = Storage::new(&opts.database).await?;
             Crawler::new(storage)?.run().await?;
         }
         Commands::AddSeed { seed } => {
-            let storage = Storage::new(&opts.database).await?;
             storage.register_seed_page(&seed).await?;
         }
         Commands::Navigate { page_id } => {
-            let storage = Storage::new(&opts.database).await?;
             let content = storage
                 .read_page_content(page_id)
                 .await?
@@ -62,7 +62,6 @@ async fn main() -> Result<()> {
             }
         }
         Commands::RunKv { page_id } => {
-            let storage = Storage::new(&opts.database).await?;
             let content = storage
                 .read_page_content(page_id)
                 .await?
@@ -71,7 +70,6 @@ async fn main() -> Result<()> {
             println!("{:#?}", kv);
         }
         Commands::ExportCsv => {
-            let storage = Storage::new(&opts.database).await?;
             let pages = storage.list_downloaded_pages().await?;
             let mut table = Table::new();
             for page in pages {
@@ -83,6 +81,11 @@ async fn main() -> Result<()> {
                 }
             }
             table.write(&mut stdout())?;
+        }
+        Commands::ListPages => {
+            for page in storage.list_pages().await? {
+                println!("{}", page);
+            }
         }
     }
 
@@ -105,7 +108,7 @@ impl Crawler {
         let mut pages = vec![];
         loop {
             if pages.is_empty() && futures.is_empty() {
-                pages = self.storage.read_fresh_pages(100).await?;
+                pages = self.storage.list_not_downloaded_pages(100).await?;
                 if pages.is_empty() {
                     break;
                 }
