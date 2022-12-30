@@ -1,5 +1,4 @@
 use clap::Parser;
-use cpu_database::CpuDatabase;
 use crab::{
     prelude::*,
     storage::{Page, Storage},
@@ -11,8 +10,10 @@ use std::{
     io::stdout,
     time::{Duration, Instant},
 };
+use test_server::TestServer;
 use tokio::time::sleep;
 mod cpu_database;
+mod test_server;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -37,6 +38,13 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    entrypoint::<TestServer>().await
+}
+
+async fn entrypoint<T>() -> Result<()>
+where
+    T: Navigator,
+{
     env_logger::init();
 
     let opts = Opts::parse();
@@ -45,7 +53,7 @@ async fn main() -> Result<()> {
 
     match opts.command {
         Commands::RunCrawler {} => {
-            Crawler::new(storage)?.run().await?;
+            Crawler::new(storage)?.run::<T>().await?;
         }
         Commands::AddSeed { seed } => {
             storage.register_page(&seed, 0).await?;
@@ -59,7 +67,7 @@ async fn main() -> Result<()> {
                 .read_page(page_id)
                 .await?
                 .ok_or(AppError::PageNotFound(page_id))?;
-            let links = CpuDatabase::next_pages(&page, &content)?;
+            let links = T::next_pages(&page, &content)?;
             for link in links {
                 println!("{}", link);
             }
@@ -69,7 +77,7 @@ async fn main() -> Result<()> {
                 .read_page_content(page_id)
                 .await?
                 .ok_or(AppError::PageNotFound(page_id))?;
-            let kv = CpuDatabase::kv(&content)?;
+            let kv = T::kv(&content)?;
             println!("{:#?}", kv);
         }
         Commands::ExportCsv => {
@@ -77,7 +85,7 @@ async fn main() -> Result<()> {
             let mut table = Table::new();
             for page in pages {
                 if let Some(content) = storage.read_page_content(page).await? {
-                    let kv = CpuDatabase::kv(&content)?;
+                    let kv = T::kv(&content)?;
                     if !kv.is_empty() {
                         table.add_row(kv);
                     }
@@ -104,9 +112,9 @@ impl Crawler {
         Ok(Self { storage })
     }
 
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run<T: Navigator>(&self) -> Result<()> {
         let n_max = 2;
-        let delay = Duration::from_secs(10);
+        let delay = Duration::from_millis(10);
         let mut futures = FuturesUnordered::new();
         let mut pages = vec![];
         loop {
@@ -132,7 +140,7 @@ impl Crawler {
                     match response {
                         Ok(content) => {
                             self.storage.write_page_content(page.id, &content).await?;
-                            let links = CpuDatabase::next_pages(&page, &content)?;
+                            let links = T::next_pages(&page, &content)?;
                             for link in links {
                                 self.storage
                                     .register_page(link.as_str(), page.depth + 1)

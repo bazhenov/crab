@@ -47,7 +47,7 @@ class MyServer(BaseHTTPRequestHandler):
 
             self.wfile.write(bytes("<html>", "utf-8"))
             self.wfile.write(bytes("<body>", "utf-8"))
-            self.wfile.write(bytes("<p>Data for %d is <span class='data'>%d</span></p>" % (d, d**2), "utf-8"))
+            self.wfile.write(bytes("<p>Data for <span class='input'>%d</span> is <span class='output'>%d</span></p>" % (d, d**2), "utf-8"))
             self.wfile.write(bytes("</body></html>", "utf-8"))
         
         else:
