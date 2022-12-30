@@ -98,7 +98,7 @@ impl Storage {
     }
 
     pub async fn list_not_downloaded_pages(&self, count: u16) -> Result<Vec<Page>> {
-        let query = "SELECT id, url, depth, status FROM pages WHERE status = ? LIMIT ?";
+        let query = "SELECT id, url, depth, status FROM pages WHERE status = ? ORDER BY depth ASC LIMIT ?";
         let result_set: Vec<PageRow> = sqlx::query_as(query)
             .bind(PageStatus::NotDownloaded.int_value())
             .bind(count)
