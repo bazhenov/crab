@@ -7,7 +7,10 @@ use crab::{
     Navigator,
 };
 use futures::{stream::FuturesUnordered, StreamExt};
-use std::{io::stdout, time::Duration};
+use std::{
+    io::stdout,
+    time::{Duration, Instant},
+};
 use tokio::time::sleep;
 mod cpu_database;
 
@@ -150,9 +153,15 @@ impl Crawler {
 }
 
 async fn fetch_content(page: Page, delay: Duration) -> (Page, Result<String>) {
-    trace!("Strating loading of: {}", &page.url);
+    trace!("Starting: {}", &page.url);
+    let instant = Instant::now();
     let response = download(&page.url.to_string()).await;
-    trace!("Finished loading of: {}", &page.url);
+    let duration = instant.elapsed();
+    info!(
+        "Downloaded in {:.1}s: {}",
+        duration.as_secs_f32(),
+        &page.url
+    );
     sleep(delay).await;
     (page, response)
 }

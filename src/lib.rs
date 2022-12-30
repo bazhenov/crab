@@ -10,7 +10,7 @@ pub mod prelude {
 
     pub type Result<T> = anyhow::Result<T>;
     pub type StdResult<T, E> = std::result::Result<T, E>;
-    pub use log::{debug, error, trace, warn};
+    pub use log::{debug, error, info, trace, warn};
 
     #[derive(Debug, thiserror::Error)]
     pub enum AppError {
