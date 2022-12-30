@@ -103,10 +103,11 @@ impl Crawler {
 
     pub async fn run(&self) -> Result<()> {
         let n_max = 2;
-        let delay = Duration::from_secs(3);
+        let delay = Duration::from_secs(10);
         let mut futures = FuturesUnordered::new();
         let mut pages = vec![];
         loop {
+            // REFILLING PHASE
             if pages.is_empty() && futures.is_empty() {
                 pages = self.storage.list_not_downloaded_pages(100).await?;
                 if pages.is_empty() {
@@ -114,12 +115,14 @@ impl Crawler {
                 }
             }
 
+            // DISPATCHING PHASE
             while futures.len() < n_max && !pages.is_empty() {
                 let next_page = pages.swap_remove(0);
                 let future = tokio::spawn(fetch_content(next_page, delay));
                 futures.push(future);
             }
 
+            // COMPLETEING PHASE
             if !futures.is_empty() {
                 if let Some(completed) = futures.next().await {
                     let (page, response) = completed?;
