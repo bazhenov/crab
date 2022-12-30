@@ -28,12 +28,12 @@ pub async fn write_and_read_pages_to_database() -> Result<()> {
 
     let url = "http://test.com";
     let new_id = storage.register_page(url, 0).await?;
-    assert_eq!(new_id, 1);
+    assert_eq!(new_id, Some(1));
 
     let pages = storage.list_not_downloaded_pages(10).await?;
 
     let expected_page = Page {
-        id: new_id,
+        id: new_id.unwrap(),
         url: Url::parse(url)?,
         depth: 0,
         status: PageStatus::NotDownloaded,
@@ -50,15 +50,10 @@ pub async fn page_should_be_registered_only_once() -> Result<()> {
     let storage = storage.as_ref();
 
     let page_id = storage.register_page("http://test.com", 0).await?;
+    assert_eq!(page_id, Some(1));
 
-    let expected_html = "<html />";
-    storage.write_page_content(page_id, expected_html).await?;
-
-    let html = storage.read_page_content(page_id).await?;
-    assert_eq!(html, Some(expected_html.to_owned()));
-
-    let page = storage.read_page(page_id).await?.unwrap();
-    assert_eq!(page.status, PageStatus::Downloaded);
+    let page_id = storage.register_page("http://test.com", 0).await?;
+    assert_eq!(page_id, None);
 
     Ok(())
 }
@@ -68,7 +63,7 @@ pub async fn write_and_read_page_content() -> Result<()> {
     let storage = new_storage().await?;
     let storage = storage.as_ref();
 
-    let page_id = storage.register_page("http://test.com", 0).await?;
+    let page_id = storage.register_page("http://test.com", 0).await?.unwrap();
 
     let expected_html = "<html />";
     storage.write_page_content(page_id, expected_html).await?;
@@ -87,7 +82,7 @@ pub async fn mark_page_as_failed() -> Result<()> {
     let storage = new_storage().await?;
     let storage = storage.as_ref();
 
-    let page_id = storage.register_page("http://test.com", 0).await?;
+    let page_id = storage.register_page("http://test.com", 0).await?.unwrap();
     storage.mark_page_as_failed(page_id).await?;
 
     let page = storage.read_page(page_id).await?.unwrap();

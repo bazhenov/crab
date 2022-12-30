@@ -78,18 +78,22 @@ impl Storage {
         Ok(pages)
     }
 
-    pub async fn register_page(&self, url: &str, depth: u16) -> Result<i64> {
-        let new_id = sqlx::query("INSERT INTO pages (url, depth) VALUES (?, ?)")
+    /// Registers new page
+    ///
+    /// If page with given rul already exists, [`Option::None`] is returned.
+    pub async fn register_page(&self, url: &str, depth: u16) -> Result<Option<i64>> {
+        let new_id = sqlx::query("INSERT OR IGNORE INTO pages (url, depth) VALUES (?, ?)")
             .bind(url)
             .bind(depth)
             .execute(&self.0)
             .await?
             .last_insert_rowid();
-        Ok(new_id)
+        Ok(Some(new_id).filter(|id| *id > 0))
     }
 
     pub async fn list_not_downloaded_pages(&self, count: u16) -> Result<Vec<Page>> {
-        let query = "SELECT id, url, depth, status FROM pages WHERE status = ? ORDER BY depth ASC LIMIT ?";
+        let query =
+            "SELECT id, url, depth, status FROM pages WHERE status = ? ORDER BY depth ASC LIMIT ?";
         let result_set: Vec<PageRow> = sqlx::query_as(query)
             .bind(PageStatus::NotDownloaded.int_value())
             .bind(count)
