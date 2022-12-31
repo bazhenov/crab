@@ -31,7 +31,7 @@ enum Commands {
     RunCrawler {},
     AddSeed { seed: String },
     Navigate { page_id: i64 },
-    RunKv { page_id: i64 },
+    Kv { page_id: i64 },
     ExportCsv,
     ListPages,
 }
@@ -72,7 +72,7 @@ where
                 println!("{}", link);
             }
         }
-        Commands::RunKv { page_id } => {
+        Commands::Kv { page_id } => {
             let content = storage
                 .read_page_content(page_id)
                 .await?
