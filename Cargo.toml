@@ -14,7 +14,7 @@ futures = "0.3.25"
 int-enum = "0.5.0"
 lazy_static = "1.4.0"
 log = "0.4.17"
-reqwest = "0.11.13"
+reqwest = { version = "0.11.13", features = ["socks"] }
 scraper = "0.14.0"
 sqlx = { version = "0.6.2", features = ["sqlite", "runtime-tokio-rustls"] }
 thiserror = "1.0.38"
