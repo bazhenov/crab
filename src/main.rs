@@ -26,26 +26,31 @@ struct Opts {
 }
 
 #[derive(Parser, Debug)]
+struct RunCrawlerOpts {
+    /// after downloading each page parse next pages
+    #[arg(long, default_value = "false")]
+    navigate: bool,
+
+    /// timeout between requests in seconds
+    #[arg(long, default_value = "0.0")]
+    timeout_sec: f32,
+
+    /// number of threads
+    #[arg(long, default_value = "5")]
+    threads: usize,
+}
+
+#[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Commands {
     /// running crawler and download pages from internet
-    RunCrawler {
-        /// after downloading each page parse next pages
-        #[arg(long, default_value = "false")]
-        navigate: bool,
-    },
+    RunCrawler(RunCrawlerOpts),
     /// add seed page to the database
-    AddSeed {
-        seed: String,
-    },
+    AddSeed { seed: String },
     /// run navigation rules on a given page and print outgoing links
-    Navigate {
-        page_id: i64,
-    },
+    Navigate { page_id: i64 },
     /// run KV-extraction rules on a given page and print results
-    Kv {
-        page_id: i64,
-    },
+    Kv { page_id: i64 },
     /// run KV-extraction rules on all pages and exports CSV
     ExportCsv,
     /// list pages in database
@@ -62,14 +67,12 @@ where
     T: Navigator,
 {
     env_logger::init();
-
     let opts = Opts::parse();
-
     let storage = Storage::new(&opts.database).await?;
 
     match opts.command {
-        Commands::RunCrawler { navigate } => {
-            Crawler::new(storage, navigate)?.run::<T>().await?;
+        Commands::RunCrawler(opts) => {
+            run_crawler::<T>(storage, opts).await?;
         }
         Commands::AddSeed { seed } => {
             storage.register_page(&seed, 0).await?;
@@ -120,64 +123,50 @@ where
     Ok(())
 }
 
-struct Crawler {
-    storage: Storage,
-    navigate: bool,
-}
-
-impl Crawler {
-    pub fn new(storage: Storage, navigate: bool) -> Result<Self> {
-        Ok(Self { storage, navigate })
-    }
-
-    pub async fn run<T: Navigator>(&self) -> Result<()> {
-        let n_max = 2;
-        let delay = Duration::from_millis(10);
-        let mut futures = FuturesUnordered::new();
-        let mut pages = vec![];
-        loop {
-            // REFILLING PHASE
-            if pages.is_empty() && futures.is_empty() {
-                pages = self.storage.list_not_downloaded_pages(100).await?;
-                if pages.is_empty() {
-                    break;
-                }
+async fn run_crawler<T: Navigator>(storage: Storage, opts: RunCrawlerOpts) -> Result<()> {
+    let delay = Duration::from_secs_f32(opts.timeout_sec);
+    let mut futures = FuturesUnordered::new();
+    let mut pages = vec![];
+    loop {
+        // REFILLING PHASE
+        if pages.is_empty() && futures.is_empty() {
+            pages = storage.list_not_downloaded_pages(100).await?;
+            if pages.is_empty() {
+                break;
             }
+        }
 
-            // DISPATCHING PHASE
-            while futures.len() < n_max && !pages.is_empty() {
-                let next_page = pages.swap_remove(0);
-                let future = tokio::spawn(fetch_content(next_page, delay));
-                futures.push(future);
-            }
+        // DISPATCHING PHASE
+        while futures.len() < opts.threads && !pages.is_empty() {
+            let next_page = pages.swap_remove(0);
+            let future = tokio::spawn(fetch_content(next_page, delay));
+            futures.push(future);
+        }
 
-            // COMPLETING PHASE
-            if !futures.is_empty() {
-                if let Some(completed) = futures.next().await {
-                    let (page, response) = completed?;
-                    match response {
-                        Ok(content) => {
-                            self.storage.write_page_content(page.id, &content).await?;
+        // COMPLETING PHASE
+        if !futures.is_empty() {
+            if let Some(completed) = futures.next().await {
+                let (page, response) = completed?;
+                match response {
+                    Ok(content) => {
+                        storage.write_page_content(page.id, &content).await?;
 
-                            if self.navigate {
-                                for link in T::next_pages(&page, &content)? {
-                                    self.storage
-                                        .register_page(link.as_str(), page.depth + 1)
-                                        .await?;
-                                }
+                        if opts.navigate {
+                            for link in T::next_pages(&page, &content)? {
+                                storage.register_page(link.as_str(), page.depth + 1).await?;
                             }
                         }
-                        Err(e) => {
-                            warn!("Unable to download: {}", page.url);
-                            debug!("{}", e);
-                            self.storage.mark_page_as_failed(page.id).await?;
-                        }
+                    }
+                    Err(e) => {
+                        warn!("Unable to download: {}", page.url);
+                        debug!("{}", e);
+                        storage.mark_page_as_failed(page.id).await?;
                     }
                 }
             }
         }
-        Ok(())
     }
+    Ok(())
 }
 
 async fn fetch_content(page: Page, delay: Duration) -> (Page, Result<String>) {
