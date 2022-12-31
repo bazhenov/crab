@@ -5,6 +5,7 @@ use url::Url;
 
 pub mod storage;
 pub mod table;
+pub mod proxy;
 
 pub mod prelude {
 
