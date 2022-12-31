@@ -28,11 +28,27 @@ struct Opts {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Commands {
-    RunCrawler {},
-    AddSeed { seed: String },
-    Navigate { page_id: i64 },
-    Kv { page_id: i64 },
+    /// running crawler and download pages from internet
+    RunCrawler {
+        /// after downloading each page parse next pages
+        #[arg(long, default_value = "false")]
+        navigate: bool,
+    },
+    /// add seed page to the database
+    AddSeed {
+        seed: String,
+    },
+    /// run navigation rules on a given page and print outgoing links
+    Navigate {
+        page_id: i64,
+    },
+    /// run KV-extraction rules on a given page and print results
+    Kv {
+        page_id: i64,
+    },
+    /// run KV-extraction rules on all pages and exports CSV
     ExportCsv,
+    /// list pages in database
     ListPages,
 }
 
@@ -52,8 +68,8 @@ where
     let storage = Storage::new(&opts.database).await?;
 
     match opts.command {
-        Commands::RunCrawler {} => {
-            Crawler::new(storage)?.run::<T>().await?;
+        Commands::RunCrawler { navigate } => {
+            Crawler::new(storage, navigate)?.run::<T>().await?;
         }
         Commands::AddSeed { seed } => {
             storage.register_page(&seed, 0).await?;
@@ -106,11 +122,12 @@ where
 
 struct Crawler {
     storage: Storage,
+    navigate: bool,
 }
 
 impl Crawler {
-    pub fn new(storage: Storage) -> Result<Self> {
-        Ok(Self { storage })
+    pub fn new(storage: Storage, navigate: bool) -> Result<Self> {
+        Ok(Self { storage, navigate })
     }
 
     pub async fn run<T: Navigator>(&self) -> Result<()> {
@@ -141,11 +158,13 @@ impl Crawler {
                     match response {
                         Ok(content) => {
                             self.storage.write_page_content(page.id, &content).await?;
-                            let links = T::next_pages(&page, &content)?;
-                            for link in links {
-                                self.storage
-                                    .register_page(link.as_str(), page.depth + 1)
-                                    .await?;
+
+                            if self.navigate {
+                                for link in T::next_pages(&page, &content)? {
+                                    self.storage
+                                        .register_page(link.as_str(), page.depth + 1)
+                                        .await?;
+                                }
                             }
                         }
                         Err(e) => {
