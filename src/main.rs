@@ -1,13 +1,17 @@
+use anyhow::Context;
 use clap::Parser;
 use crab::{
     prelude::*,
+    proxy::Proxies,
     storage::{Page, Storage},
     table::Table,
     Navigator,
 };
 use futures::{stream::FuturesUnordered, StreamExt};
+use reqwest::{Client, Proxy};
 use std::{
     io::stdout,
+    path::PathBuf,
     time::{Duration, Instant},
 };
 use test_server::TestServer;
@@ -38,6 +42,10 @@ struct RunCrawlerOpts {
     /// number of threads
     #[arg(long, default_value = "5")]
     threads: usize,
+
+    /// path to proxies list
+    #[arg(short, long)]
+    proxies_list: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
@@ -59,7 +67,7 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    entrypoint::<TestServer>().await
+    entrypoint::<cpu_database::CpuDatabase>().await
 }
 
 async fn entrypoint<T>() -> Result<()>
@@ -127,6 +135,11 @@ async fn run_crawler<T: Navigator>(storage: Storage, opts: RunCrawlerOpts) -> Re
     let delay = Duration::from_secs_f32(opts.timeout_sec);
     let mut futures = FuturesUnordered::new();
     let mut pages = vec![];
+    let mut proxies = match opts.proxies_list {
+        Some(path) => Proxies::from_file(&path).context(AppError::UnableToOpenProxyList(path))?,
+        None => Proxies::default(),
+    };
+
     loop {
         // REFILLING PHASE
         if pages.is_empty() && futures.is_empty() {
@@ -139,17 +152,26 @@ async fn run_crawler<T: Navigator>(storage: Storage, opts: RunCrawlerOpts) -> Re
         // DISPATCHING PHASE
         while futures.len() < opts.threads && !pages.is_empty() {
             let next_page = pages.swap_remove(0);
-            let future = tokio::spawn(fetch_content(next_page, delay));
+            let next_proxy = proxies.next();
+            let (proxy, proxy_id) = next_proxy.unzip();
+            let client = create_http_client(proxy)?;
+            let future = tokio::spawn(async move {
+                let response = fetch_content(client, next_page, delay).await;
+                (proxy_id, response)
+            });
             futures.push(future);
         }
 
         // COMPLETING PHASE
         if !futures.is_empty() {
             if let Some(completed) = futures.next().await {
-                let (page, response) = completed?;
+                let (proxy, (page, response)) = completed?;
                 match response {
                     Ok(content) => {
                         storage.write_page_content(page.id, &content).await?;
+                        if let Some(proxy) = proxy {
+                            proxies.proxy_alive(proxy);
+                        }
 
                         if opts.navigate {
                             for link in T::next_pages(&page, &content)? {
@@ -160,7 +182,10 @@ async fn run_crawler<T: Navigator>(storage: Storage, opts: RunCrawlerOpts) -> Re
                     Err(e) => {
                         warn!("Unable to download: {}", page.url);
                         debug!("{}", e);
-                        storage.mark_page_as_failed(page.id).await?;
+                        // storage.mark_page_as_failed(page.id).await?;
+                        if let Some(proxy) = proxy {
+                            proxies.proxy_dead(proxy);
+                        }
                     }
                 }
             }
@@ -169,12 +194,25 @@ async fn run_crawler<T: Navigator>(storage: Storage, opts: RunCrawlerOpts) -> Re
     Ok(())
 }
 
-async fn fetch_content(page: Page, delay: Duration) -> (Page, Result<String>) {
+fn create_http_client(proxy: Option<Proxy>) -> Result<Client> {
+    let mut builder = Client::builder();
+    if let Some(proxy) = proxy {
+        builder = builder.proxy(proxy);
+    }
+    let client = builder
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(10))
+        .danger_accept_invalid_certs(true)
+        .build()?;
+    Ok(client)
+}
+
+async fn fetch_content(client: Client, page: Page, delay: Duration) -> (Page, Result<String>) {
     trace!("Starting: {}", &page.url);
     let instant = Instant::now();
-    let response = download(page.url.as_ref()).await;
+    let response = download(client, page.url.as_ref()).await;
     let duration = instant.elapsed();
-    info!(
+    trace!(
         "Downloaded in {:.1}s: {}",
         duration.as_secs_f32(),
         &page.url
@@ -183,6 +221,6 @@ async fn fetch_content(page: Page, delay: Duration) -> (Page, Result<String>) {
     (page, response)
 }
 
-async fn download(url: &str) -> Result<String> {
-    Ok(reqwest::get(url).await?.text().await?)
+async fn download(client: Client, url: &str) -> Result<String> {
+    Ok(client.get(url).send().await?.text().await?)
 }

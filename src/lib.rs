@@ -3,14 +3,16 @@ use std::collections::HashMap;
 use storage::Page;
 use url::Url;
 
+pub mod proxy;
 pub mod storage;
 pub mod table;
-pub mod proxy;
 
 pub mod prelude {
 
     pub type Result<T> = anyhow::Result<T>;
     pub type StdResult<T, E> = std::result::Result<T, E>;
+    use std::path::PathBuf;
+
     pub use log::{debug, error, info, trace, warn};
 
     #[derive(Debug, thiserror::Error)]
@@ -20,6 +22,9 @@ pub mod prelude {
 
         #[error("Page #{} not found", .0)]
         PageNotFound(i64),
+
+        #[error("Opening proxy list: {}", .0.display())]
+        UnableToOpenProxyList(PathBuf),
     }
 }
 

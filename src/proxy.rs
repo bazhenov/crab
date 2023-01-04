@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use rand::{rngs::ThreadRng, seq::SliceRandom, thread_rng};
 use reqwest::Proxy;
 use std::{
     fs::File,
@@ -15,8 +16,10 @@ pub type ProxyId = usize;
 /// Tracks which proxies are alive and which are dead. Each proxy get saturated counter in a range `-2..=2`.
 /// Each time request has been processed proxy counter is incremented (in case of successfull response)
 /// or decremented (in case of failure). Dead proxy is defined as a proxy with undersaturated counter (`-2`).
+#[derive(Default)]
 pub struct Proxies {
     proxies: Vec<(Proxy, AliveCounter)>,
+    rng: ThreadRng,
 }
 
 impl Proxies {
@@ -29,7 +32,8 @@ impl Proxies {
                 proxies.push((Proxy::all(line)?, AliveCounter::default()));
             }
         }
-        Ok(Self { proxies })
+        let rng = thread_rng();
+        Ok(Self { proxies, rng })
     }
 
     pub fn proxy_alive(&mut self, proxy_id: ProxyId) {
@@ -39,13 +43,50 @@ impl Proxies {
     }
 
     pub fn proxy_dead(&mut self, proxy_id: ProxyId) {
-        if let Some((_, alive_counter)) = self.proxies.get_mut(proxy_id) {
+        if let Some((proxy, alive_counter)) = self.proxies.get_mut(proxy_id) {
+            info!("Proxy found dead: {:?}", proxy);
             *alive_counter -= 1;
         }
     }
 
     pub fn len(&self) -> usize {
         self.proxies.len()
+    }
+}
+
+impl Iterator for Proxies {
+    type Item = (Proxy, ProxyId);
+
+    /// Returning next proxy to be used
+    ///
+    /// Tries to select a proxy from the list of the non dead proxies first. If all proxies are dead
+    /// keeps trying a random dead proxy.
+    fn next(&mut self) -> Option<Self::Item> {
+        let not_dead_proxies = self
+            .proxies
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, counter))| counter.state() != CounterState::SaturatedDown)
+            .map(|(id, (proxy, _))| (id, proxy))
+            .collect::<Vec<_>>();
+
+        if let Some((id, proxy)) = not_dead_proxies.choose(&mut self.rng) {
+            return Some(((*proxy).clone(), *id));
+        }
+
+        // No alive proxies left. Trying again all proxies in the list.
+        let all_proxies = self
+            .proxies
+            .iter()
+            .enumerate()
+            .map(|(id, (proxy, _))| (id, proxy))
+            .collect::<Vec<_>>();
+
+        if let Some((id, proxy)) = all_proxies.choose(&mut self.rng) {
+            return Some(((*proxy).clone(), *id));
+        }
+
+        None
     }
 }
 
