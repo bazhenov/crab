@@ -36,7 +36,7 @@ impl fmt::Display for Page {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Page #{:3}   depth {:3}   {:10}     {}",
+            "Page {:3}   depth {:3}   {:10}     {}",
             self.id, self.depth, self.status, self.url
         )
     }

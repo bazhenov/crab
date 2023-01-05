@@ -1,20 +1,13 @@
 use anyhow::Context;
 use clap::Parser;
-use crab::{
-    prelude::*,
-    proxy::Proxies,
-    storage::{Page, Storage},
-    table::Table,
-    Navigator,
-};
+use crab::{prelude::*, proxy::Proxies, storage::Storage, table::Table, Navigator};
 use futures::{stream::FuturesUnordered, StreamExt};
-use reqwest::{Client, Proxy};
+use reqwest::{Client, Proxy, Url};
 use std::{
     io::stdout,
     path::PathBuf,
     time::{Duration, Instant},
 };
-use test_server::TestServer;
 use tokio::time::sleep;
 mod cpu_database;
 mod test_server;
@@ -57,6 +50,8 @@ enum Commands {
     AddSeed { seed: String },
     /// run navigation rules on a given page and print outgoing links
     Navigate { page_id: i64 },
+    /// run navigation rules on all downloaded pages and writes found links back to pages database
+    NavigateAll,
     /// run KV-extraction rules on a given page and print results
     Kv { page_id: i64 },
     /// run KV-extraction rules on all pages and exports CSV
@@ -82,9 +77,11 @@ where
         Commands::RunCrawler(opts) => {
             run_crawler::<T>(storage, opts).await?;
         }
+
         Commands::AddSeed { seed } => {
             storage.register_page(&seed, 0).await?;
         }
+
         Commands::Navigate { page_id } => {
             let content = storage
                 .read_page_content(page_id)
@@ -99,6 +96,23 @@ where
                 println!("{}", link);
             }
         }
+
+        Commands::NavigateAll => {
+            for page_id in storage.list_downloaded_pages().await? {
+                let page = storage
+                    .read_page(page_id)
+                    .await?
+                    .ok_or(AppError::PageNotFound(page_id))?;
+                let content = storage
+                    .read_page_content(page_id)
+                    .await?
+                    .ok_or(AppError::PageNotFound(page_id))?;
+                for link in T::next_pages(&page, &content)? {
+                    storage.register_page(link.as_str(), page.depth + 1).await?;
+                }
+            }
+        }
+
         Commands::Kv { page_id } => {
             let content = storage
                 .read_page_content(page_id)
@@ -107,13 +121,14 @@ where
             let kv = T::kv(&content)?;
             println!("{:#?}", kv);
         }
+
         Commands::ExportCsv => {
             let mut table = Table::default();
-            for page in storage.list_downloaded_pages().await? {
+            for page_id in storage.list_downloaded_pages().await? {
                 let content = storage
-                    .read_page_content(page)
+                    .read_page_content(page_id)
                     .await?
-                    .ok_or(AppError::PageNotFound(page))?;
+                    .ok_or(AppError::PageNotFound(page_id))?;
                 let kv = T::kv(&content)?;
                 if !kv.is_empty() {
                     table.add_row(kv);
@@ -121,6 +136,7 @@ where
             }
             table.write(&mut stdout())?;
         }
+
         Commands::ListPages => {
             for page in storage.list_pages().await? {
                 println!("{}", page);
@@ -156,8 +172,8 @@ async fn run_crawler<T: Navigator>(storage: Storage, opts: RunCrawlerOpts) -> Re
             let (proxy, proxy_id) = next_proxy.unzip();
             let client = create_http_client(proxy)?;
             let future = tokio::spawn(async move {
-                let response = fetch_content(client, next_page, delay).await;
-                (proxy_id, response)
+                let content = fetch_content(client, next_page.url.clone(), delay).await;
+                (proxy_id, next_page, content)
             });
             futures.push(future);
         }
@@ -165,12 +181,12 @@ async fn run_crawler<T: Navigator>(storage: Storage, opts: RunCrawlerOpts) -> Re
         // COMPLETING PHASE
         if !futures.is_empty() {
             if let Some(completed) = futures.next().await {
-                let (proxy, (page, response)) = completed?;
+                let (proxy, page, response) = completed?;
                 match response {
                     Ok(content) => {
                         storage.write_page_content(page.id, &content).await?;
                         if let Some(proxy) = proxy {
-                            proxies.proxy_alive(proxy);
+                            proxies.proxy_succeseed(proxy);
                         }
 
                         if opts.navigate {
@@ -184,7 +200,7 @@ async fn run_crawler<T: Navigator>(storage: Storage, opts: RunCrawlerOpts) -> Re
                         debug!("{}", e);
                         // storage.mark_page_as_failed(page.id).await?;
                         if let Some(proxy) = proxy {
-                            proxies.proxy_dead(proxy);
+                            proxies.proxy_failed(proxy);
                         }
                     }
                 }
@@ -207,18 +223,14 @@ fn create_http_client(proxy: Option<Proxy>) -> Result<Client> {
     Ok(client)
 }
 
-async fn fetch_content(client: Client, page: Page, delay: Duration) -> (Page, Result<String>) {
-    trace!("Starting: {}", &page.url);
+async fn fetch_content(client: Client, url: Url, delay: Duration) -> Result<String> {
+    trace!("Starting: {}", &url);
     let instant = Instant::now();
-    let response = download(client, page.url.as_ref()).await;
+    let response = download(client, url.as_ref()).await;
     let duration = instant.elapsed();
-    trace!(
-        "Downloaded in {:.1}s: {}",
-        duration.as_secs_f32(),
-        &page.url
-    );
+    trace!("Downloaded in {:.1}s: {}", duration.as_secs_f32(), &url);
     sleep(delay).await;
-    (page, response)
+    response
 }
 
 async fn download(client: Client, url: &str) -> Result<String> {

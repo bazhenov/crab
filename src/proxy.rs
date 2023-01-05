@@ -36,21 +36,21 @@ impl Proxies {
         Ok(Self { proxies, rng })
     }
 
-    pub fn proxy_alive(&mut self, proxy_id: ProxyId) {
+    /// Called when proxy failed to process a request
+    pub fn proxy_failed(&mut self, proxy_id: ProxyId) {
+        if let Some((proxy, alive_counter)) = self.proxies.get_mut(proxy_id) {
+            *alive_counter -= 1;
+            if alive_counter.state() == CounterState::SaturatedDown {
+                info!("Proxy found dead: {:?}", proxy);
+            }
+        }
+    }
+
+    /// Called when proxy successfully process a request
+    pub fn proxy_succeseed(&mut self, proxy_id: ProxyId) {
         if let Some((_, alive_counter)) = self.proxies.get_mut(proxy_id) {
             *alive_counter += 1;
         }
-    }
-
-    pub fn proxy_dead(&mut self, proxy_id: ProxyId) {
-        if let Some((proxy, alive_counter)) = self.proxies.get_mut(proxy_id) {
-            info!("Proxy found dead: {:?}", proxy);
-            *alive_counter -= 1;
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.proxies.len()
     }
 }
 
@@ -141,8 +141,7 @@ mod test {
         writeln!(&mut file, "socks5://127.2")?;
 
         let proxies = Proxies::from_file(proxy_list)?;
-
-        assert_eq!(proxies.len(), 2);
+        assert_eq!(proxies.proxies.len(), 2);
 
         Ok(())
     }
