@@ -59,7 +59,10 @@ enum Commands {
         page_id: i64,
     },
     /// run KV-extraction rules on all pages and exports CSV
-    ExportCsv,
+    ExportCsv {
+        #[arg(short, long)]
+        name: Option<String>,
+    },
     /// list pages in database
     ListPages,
 }
@@ -128,7 +131,7 @@ where
             }
         }
 
-        Commands::ExportCsv => {
+        Commands::ExportCsv { name } => {
             let mut table = Table::default();
             for page_id in storage.list_downloaded_pages().await? {
                 let content = storage
@@ -137,7 +140,7 @@ where
                     .ok_or(AppError::PageNotFound(page_id))?;
                 let kv = T::kv(&content)?;
                 if !kv.is_empty() {
-                    table.add_row(kv);
+                    table.add_row(kv.into_iter().filter(key_contains(&name)));
                 }
             }
             table.write(&mut stdout())?;
