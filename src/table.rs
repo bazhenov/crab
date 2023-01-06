@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use csv::Writer;
-use std::{collections::HashMap, io::Write};
+use std::io::Write;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -18,7 +18,7 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn add_row(&mut self, row: HashMap<String, String>) {
+    pub fn add_row(&mut self, row: impl IntoIterator<Item = (String, String)>) {
         let mut row_as_vec = vec![];
         for (key, value) in row.into_iter() {
             let column = self.columns.iter().enumerate().find(|c| c.1 == &key);
@@ -57,7 +57,6 @@ impl Table {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use literal::{map, MapLiteral};
     use std::io::Cursor;
 
     fn to_csv(table: Table) -> Result<String> {
@@ -70,8 +69,8 @@ mod tests {
     #[test]
     fn check_table_add_column() -> Result<()> {
         let mut table = Table::default();
-        table.add_row(map! {"foo": "bar"});
-        table.add_row(map! {"bar": "baz"});
+        table.add_row(vec![("foo".into(), "bar".into())]);
+        table.add_row(vec![("bar".into(), "baz".into())]);
 
         let expected_csv = "foo,bar\nbar,\n,baz\n";
         assert_eq!(expected_csv, to_csv(table)?);

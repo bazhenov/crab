@@ -196,7 +196,6 @@ dependencies = [
  "futures",
  "int-enum",
  "lazy_static",
- "literal",
  "log",
  "rand 0.8.5",
  "refinery",
@@ -936,12 +935,6 @@ name = "linux-raw-sys"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f051f77a7c8e6957c0696eac88f26b0117e54f52d3fc682ab19397a8812846a4"
-
-[[package]]
-name = "literal"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1098cb40d9a755c5c61003c7d4b5fb890d393bc14cc14024b4000b184e6c9669"
 
 [[package]]
 name = "lock_api"
