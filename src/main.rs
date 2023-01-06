@@ -123,15 +123,8 @@ where
                 .await?
                 .ok_or(AppError::PageNotFound(page_id))?;
             let kv = T::kv(&content)?;
-            for (key, value) in kv.iter() {
-                match &name {
-                    Some(name) => {
-                        if key.to_lowercase().contains(&name.to_lowercase()) {
-                            println!("{}: {}", &key, &value)
-                        }
-                    }
-                    None => println!("{}: {}", key, value),
-                }
+            for (key, value) in kv.into_iter().filter(key_contains(&name)) {
+                println!("{}: {}", &key, &value)
             }
         }
 
@@ -248,4 +241,12 @@ async fn fetch_content(client: Client, url: Url, delay: Duration) -> Result<Stri
 
 async fn download(client: Client, url: &str) -> Result<String> {
     Ok(client.get(url).send().await?.text().await?)
+}
+
+/// Returns a closure for a filtering on a key contains a string
+fn key_contains<'a, T>(needle: &'a Option<String>) -> impl Fn(&(String, T)) -> bool + 'a {
+    move |(key, _): &(String, T)| match needle {
+        Some(needle) => key.to_lowercase().contains(&needle.to_lowercase()),
+        _ => false,
+    }
 }
