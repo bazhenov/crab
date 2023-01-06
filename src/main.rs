@@ -53,7 +53,11 @@ enum Commands {
     /// run navigation rules on all downloaded pages and writes found links back to pages database
     NavigateAll,
     /// run KV-extraction rules on a given page and print results
-    Kv { page_id: i64 },
+    Kv {
+        #[arg(short, long)]
+        name: Option<String>,
+        page_id: i64,
+    },
     /// run KV-extraction rules on all pages and exports CSV
     ExportCsv,
     /// list pages in database
@@ -113,13 +117,22 @@ where
             }
         }
 
-        Commands::Kv { page_id } => {
+        Commands::Kv { name, page_id } => {
             let content = storage
                 .read_page_content(page_id)
                 .await?
                 .ok_or(AppError::PageNotFound(page_id))?;
             let kv = T::kv(&content)?;
-            println!("{:#?}", kv);
+            for (key, value) in kv.iter() {
+                match &name {
+                    Some(name) => {
+                        if key.to_lowercase().contains(&name.to_lowercase()) {
+                            println!("{}: {}", &key, &value)
+                        }
+                    }
+                    None => println!("{}: {}", key, value),
+                }
+            }
         }
 
         Commands::ExportCsv => {
