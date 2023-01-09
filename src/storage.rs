@@ -59,7 +59,8 @@ impl Storage {
 
     pub async fn list_downloaded_pages(&self) -> Result<Vec<i64>> {
         let row: Vec<(i64,)> =
-            sqlx::query_as("SELECT id FROM pages WHERE content IS NOT NULL AND content != 'Error'")
+            sqlx::query_as("SELECT id FROM pages WHERE content IS NOT NULL AND status = ?")
+                .bind(PageStatus::Downloaded.int_value())
                 .fetch_all(&self.0)
                 .await?;
         let row = row.into_iter().map(|(id,)| id).collect::<Vec<_>>();
@@ -108,9 +109,9 @@ impl Storage {
         Ok(pages)
     }
 
-    pub async fn mark_page_as_failed(&self, page_id: i64) -> Result<()> {
+    pub async fn reset_page(&self, page_id: i64) -> Result<()> {
         sqlx::query("UPDATE pages SET status = ? WHERE id = ?")
-            .bind(PageStatus::Failed.int_value())
+            .bind(PageStatus::NotDownloaded.int_value())
             .bind(page_id)
             .execute(&self.0)
             .await?;

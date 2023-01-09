@@ -31,6 +31,8 @@ pub mod prelude {
 pub trait Navigator {
     fn next_pages(page: &Page, content: &str) -> Result<Vec<Url>>;
 
+    fn validate(content: &str) -> bool;
+
     fn kv(content: &str) -> Result<HashMap<String, String>>;
 }
 

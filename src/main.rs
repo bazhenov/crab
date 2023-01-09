@@ -65,6 +65,14 @@ enum Commands {
     },
     /// list pages in database
     ListPages,
+    /// prints pages failed validation check
+    Validate {
+        /// resets not valid pages to initial state
+        #[arg(short, long)]
+        reset: bool,
+    },
+    /// prints a page
+    Dump { page_id: i64 },
 }
 
 #[tokio::main]
@@ -151,6 +159,33 @@ where
                 println!("{}", page);
             }
         }
+
+        Commands::Validate { reset } => {
+            for page_id in storage.list_downloaded_pages().await? {
+                let page = storage
+                    .read_page(page_id)
+                    .await?
+                    .ok_or(AppError::PageNotFound(page_id))?;
+                let content = storage
+                    .read_page_content(page_id)
+                    .await?
+                    .ok_or(AppError::PageNotFound(page_id))?;
+                if !T::validate(&content) {
+                    println!("{}\t{}", page.id, page.url);
+                    if reset {
+                        storage.reset_page(page_id).await?;
+                    }
+                }
+            }
+        }
+
+        Commands::Dump { page_id } => {
+            let content = storage
+                .read_page_content(page_id)
+                .await?
+                .ok_or(AppError::PageNotFound(page_id))?;
+            println!("{}", content);
+        }
     }
 
     Ok(())
@@ -193,20 +228,26 @@ async fn run_crawler<T: Navigator>(storage: Storage, opts: RunCrawlerOpts) -> Re
                 let (proxy, page, response) = completed?;
                 match response {
                     Ok(content) => {
-                        storage.write_page_content(page.id, &content).await?;
-                        if let Some(proxy) = proxy {
-                            proxies.proxy_succeseed(proxy);
-                        }
+                        if T::validate(&content) {
+                            storage.write_page_content(page.id, &content).await?;
+                            if let Some(proxy) = proxy {
+                                proxies.proxy_succeseed(proxy);
+                            }
 
-                        if opts.navigate {
-                            for link in T::next_pages(&page, &content)? {
-                                storage.register_page(link.as_str(), page.depth + 1).await?;
+                            if opts.navigate {
+                                for link in T::next_pages(&page, &content)? {
+                                    storage.register_page(link.as_str(), page.depth + 1).await?;
+                                }
+                            }
+                        } else {
+                            if let Some(proxy) = proxy {
+                                proxies.proxy_failed(proxy);
                             }
                         }
                     }
                     Err(e) => {
-                        warn!("Unable to download: {}", page.url);
-                        debug!("{}", e);
+                        debug!("Unable to download: {}", page.url);
+                        trace!("{}", e);
                         // storage.mark_page_as_failed(page.id).await?;
                         if let Some(proxy) = proxy {
                             proxies.proxy_failed(proxy);
@@ -236,8 +277,10 @@ async fn fetch_content(client: Client, url: Url, delay: Duration) -> Result<Stri
     trace!("Starting: {}", &url);
     let instant = Instant::now();
     let response = download(client, url.as_ref()).await;
-    let duration = instant.elapsed();
-    trace!("Downloaded in {:.1}s: {}", duration.as_secs_f32(), &url);
+    if response.is_ok() {
+        let duration = instant.elapsed();
+        trace!("Downloaded in {:.1}s: {}", duration.as_secs_f32(), &url);
+    }
     sleep(delay).await;
     response
 }

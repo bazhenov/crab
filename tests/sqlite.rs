@@ -77,20 +77,6 @@ pub async fn write_and_read_page_content() -> Result<()> {
     Ok(())
 }
 
-#[test]
-pub async fn mark_page_as_failed() -> Result<()> {
-    let storage = new_storage().await?;
-    let storage = storage.as_ref();
-
-    let page_id = storage.register_page("http://test.com", 0).await?.unwrap();
-    storage.mark_page_as_failed(page_id).await?;
-
-    let page = storage.read_page(page_id).await?.unwrap();
-    assert_eq!(page.status, PageStatus::Failed);
-
-    Ok(())
-}
-
 struct TempStorage(Storage, TempDir);
 
 impl AsRef<Storage> for TempStorage {
