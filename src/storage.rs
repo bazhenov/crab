@@ -7,7 +7,7 @@ use url::Url;
 pub struct Storage(SqlitePool);
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Clone, Copy, IntEnum)]
+#[derive(Debug, PartialEq, Clone, Copy, IntEnum, Eq, Hash)]
 pub enum PageStatus {
     NotDownloaded = 1,
     Downloaded = 2,
@@ -24,7 +24,7 @@ impl fmt::Display for PageStatus {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Page {
     pub id: i64,
     pub url: Url,

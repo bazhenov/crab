@@ -1,14 +1,37 @@
 use anyhow::Context;
+use atom::Atom;
 use clap::Parser;
-use crab::{prelude::*, proxy::Proxies, storage::Storage, table::Table, Navigator};
-use futures::{stream::FuturesUnordered, StreamExt};
+use crab::{
+    prelude::*,
+    proxy::Proxies,
+    storage::{Page, Storage},
+    table::Table,
+    Navigator,
+};
+use crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use futures::{join, stream::FuturesUnordered, StreamExt};
 use reqwest::{Client, Proxy, Url};
 use std::{
-    io::stdout,
+    collections::HashSet,
+    fmt::format,
+    io::{self, stdout},
     path::PathBuf,
+    sync::{atomic::Ordering, Arc},
+    thread,
     time::{Duration, Instant},
 };
-use tokio::time::sleep;
+use tokio::{task::spawn_blocking, time::sleep};
+use tui::{
+    backend::{Backend, CrosstermBackend},
+    layout::{Constraint, Direction, Layout},
+    text::{Span, Spans},
+    widgets::{Block, Borders, List, ListItem},
+    Frame, Terminal,
+};
 mod cpu_database;
 mod test_server;
 
@@ -77,7 +100,93 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    entrypoint::<cpu_database::CpuDatabase>().await
+    entrypoint::<test_server::TestServer>().await
+}
+
+fn reporting_ui(state: Arc<Atom<Box<CrawlerState>>>, tick_rate: Duration) -> Result<()> {
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    let res = run_app(&mut terminal, state, tick_rate);
+
+    // restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    res?;
+    Ok(())
+}
+
+fn run_app<B: Backend>(
+    terminal: &mut Terminal<B>,
+    state: Arc<Atom<Box<CrawlerState>>>,
+    tick_rate: Duration,
+) -> io::Result<()> {
+    let mut last_tick = Instant::now();
+    let mut current_state: Option<Box<CrawlerState>> = None;
+    loop {
+        if let Some(state) = state.take(Ordering::Relaxed) {
+            current_state = Some(state);
+        }
+
+        if let Some(state) = &current_state {
+            terminal.draw(|f| ui(f, state))?;
+        }
+
+        let timeout = tick_rate
+            .checked_sub(last_tick.elapsed())
+            .unwrap_or_else(|| Duration::from_secs(0));
+        if crossterm::event::poll(timeout)? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Char('q') => return Ok(()),
+                    _ => {}
+                }
+            }
+        }
+        if last_tick.elapsed() >= tick_rate {
+            // app.on_tick();
+            last_tick = Instant::now();
+        }
+    }
+}
+
+fn ui<B: Backend>(f: &mut Frame<B>, state: &CrawlerState) {
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Max(5), Constraint::Percentage(50)].as_ref())
+        .split(f.size());
+
+    let metrics = List::new(vec![
+        ListItem::new(format!("Number of requests: {}", state.requests)),
+        ListItem::new(format!(
+            "Number of requests in flight: {}",
+            state.requests_in_flight.len()
+        )),
+    ])
+    .block(Block::default().borders(Borders::ALL).title("Metrics"));
+
+    let requests = state
+        .requests_in_flight
+        .iter()
+        .map(|r| ListItem::new(r.url.to_string()))
+        .collect::<Vec<_>>();
+    let requests = List::new(requests).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Requests in flight"),
+    );
+
+    f.render_widget(metrics, layout[0]);
+    f.render_widget(requests, layout[1]);
 }
 
 async fn entrypoint<T>() -> Result<()>
@@ -90,7 +199,17 @@ where
 
     match opts.command {
         Commands::RunCrawler(opts) => {
-            run_crawler::<T>(storage, opts).await?;
+            let report = Arc::new(Atom::empty());
+            let tick_interval = Duration::from_millis(100);
+            let reporting_handle = {
+                let report = report.clone();
+                let tick_interval = tick_interval.clone();
+                spawn_blocking(move || reporting_ui(report, tick_interval))
+            };
+            let crawling_handle = run_crawler::<T>(storage, opts, (report.clone(), tick_interval));
+            let (a, b) = join!(reporting_handle, crawling_handle);
+            a??;
+            b?;
         }
 
         Commands::AddSeed { seed } => {
@@ -191,7 +310,22 @@ where
     Ok(())
 }
 
-async fn run_crawler<T: Navigator>(storage: Storage, opts: RunCrawlerOpts) -> Result<()> {
+#[derive(Clone, Default)]
+struct CrawlerState {
+    /// Number of requests crawler initiated from the start of it's running
+    requests: u32,
+    requests_in_flight: HashSet<Page>,
+}
+
+async fn run_crawler<T: Navigator>(
+    storage: Storage,
+    opts: RunCrawlerOpts,
+    report: (Arc<Atom<Box<CrawlerState>>>, Duration),
+) -> Result<()> {
+    let (report, report_tick) = report;
+    let mut last_report_time = Instant::now();
+
+    let mut state = CrawlerState::default();
     let delay = Duration::from_secs_f32(opts.timeout_sec);
     let mut futures = FuturesUnordered::new();
     let mut pages = vec![];
@@ -200,7 +334,15 @@ async fn run_crawler<T: Navigator>(storage: Storage, opts: RunCrawlerOpts) -> Re
         None => Proxies::default(),
     };
 
+    report.swap(Box::new(state.clone()), Ordering::Relaxed);
+
     loop {
+        // REPORTING PHASE
+        if last_report_time.elapsed() >= report_tick {
+            report.swap(Box::new(state.clone()), Ordering::Relaxed);
+            last_report_time = Instant::now();
+        }
+
         // REFILLING PHASE
         if pages.is_empty() && futures.is_empty() {
             pages = storage.list_not_downloaded_pages(100).await?;
@@ -215,6 +357,10 @@ async fn run_crawler<T: Navigator>(storage: Storage, opts: RunCrawlerOpts) -> Re
             let next_proxy = proxies.next();
             let (proxy, proxy_id) = next_proxy.unzip();
             let client = create_http_client(proxy)?;
+
+            state.requests += 1;
+            state.requests_in_flight.insert(next_page.clone());
+
             let future = tokio::spawn(async move {
                 let content = fetch_content(client, next_page.url.clone(), delay).await;
                 (proxy_id, next_page, content)
@@ -226,6 +372,8 @@ async fn run_crawler<T: Navigator>(storage: Storage, opts: RunCrawlerOpts) -> Re
         if !futures.is_empty() {
             if let Some(completed) = futures.next().await {
                 let (proxy, page, response) = completed?;
+                state.requests_in_flight.remove(&page);
+
                 match response {
                     Ok(content) => {
                         if T::validate(&content) {
