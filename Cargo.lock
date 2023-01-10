@@ -49,6 +49,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "atom"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dcfa7026c8fa43fa767bff0b7cd4d1963cdfd946e0386bee93003e9b2498562"
+
+[[package]]
 name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -196,6 +202,7 @@ name = "crab"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "atom",
  "clap",
  "crossterm",
  "csv",
