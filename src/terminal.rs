@@ -46,7 +46,7 @@ fn run_terminal<B: Backend>(
     tick_duration: Duration,
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
-    let mut current_state: Option<Box<CrawlerState>> = None;
+    let mut current_state = None;
     loop {
         current_state = state.take(Ordering::Relaxed).or(current_state);
 
