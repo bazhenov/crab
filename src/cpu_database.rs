@@ -10,7 +10,7 @@ lazy_static! {
     static ref TD_SELECTOR: Selector = Selector::parse("td").unwrap();
     static ref TH_SELECTOR: Selector = Selector::parse("th").unwrap();
     static ref ROW_SELECTOR: Selector = Selector::parse(".details table tr").unwrap();
-    static ref LINK_SELECTOR: Selector = Selector::parse("table.processors td a").unwrap();
+    static ref LINK_SELECTOR: Selector = Selector::parse("a").unwrap();
 }
 
 impl Navigator for CpuDatabase {
@@ -20,7 +20,9 @@ impl Navigator for CpuDatabase {
         let mut links = vec![];
         for f in document.select(&LINK_SELECTOR) {
             if let Some(link) = f.value().attr("href") {
-                links.push(normalize_url(&page.url, link)?);
+                if link.starts_with("/cpu-specs/") {
+                    links.push(normalize_url(&page.url, link)?);
+                }
             }
         }
         Ok(links)
@@ -42,5 +44,9 @@ impl Navigator for CpuDatabase {
             }
         }
         Ok(kv)
+    }
+
+    fn validate(content: &str) -> bool {
+        !content.contains("captcha")
     }
 }
