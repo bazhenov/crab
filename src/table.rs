@@ -31,8 +31,10 @@ impl Table {
             };
             row_as_vec.push((column_idx, value));
         }
-        row_as_vec.sort_by_key(|(idx, _)| *idx);
-        self.rows.push(row_as_vec);
+        if !row_as_vec.is_empty() {
+            row_as_vec.sort_by_key(|(idx, _)| *idx);
+            self.rows.push(row_as_vec);
+        }
     }
 
     pub fn write(&self, out: &mut impl Write) -> StdResult<(), Error> {

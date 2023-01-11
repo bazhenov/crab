@@ -145,15 +145,10 @@ where
         }
 
         Commands::NavigateAll => {
-            for page_id in storage.list_downloaded_pages().await? {
-                let page = storage
-                    .read_page(page_id)
-                    .await?
-                    .ok_or(AppError::PageNotFound(page_id))?;
-                let content = storage
-                    .read_page_content(page_id)
-                    .await?
-                    .ok_or(AppError::PageNotFound(page_id))?;
+            let mut pages = storage.read_downloaded_pages();
+
+            while let Some(row) = pages.next().await {
+                let (page, content) = row?;
                 for link in T::next_pages(&page, &content)? {
                     storage.register_page(link.as_str(), page.depth + 1).await?;
                 }
@@ -173,15 +168,12 @@ where
 
         Commands::ExportCsv { name } => {
             let mut table = Table::default();
-            for page_id in storage.list_downloaded_pages().await? {
-                let content = storage
-                    .read_page_content(page_id)
-                    .await?
-                    .ok_or(AppError::PageNotFound(page_id))?;
-                let kv = T::kv(&content)?;
-                if !kv.is_empty() {
-                    table.add_row(kv.into_iter().filter(key_contains(&name)));
-                }
+            let mut pages = storage.read_downloaded_pages();
+
+            while let Some(row) = pages.next().await {
+                let (_, content) = row?;
+                let kv = T::kv(&content)?.into_iter().filter(key_contains(&name));
+                table.add_row(kv);
             }
             table.write(&mut stdout())?;
         }
@@ -193,19 +185,13 @@ where
         }
 
         Commands::Validate { reset } => {
-            for page_id in storage.list_downloaded_pages().await? {
-                let page = storage
-                    .read_page(page_id)
-                    .await?
-                    .ok_or(AppError::PageNotFound(page_id))?;
-                let content = storage
-                    .read_page_content(page_id)
-                    .await?
-                    .ok_or(AppError::PageNotFound(page_id))?;
+            let mut pages = storage.read_downloaded_pages();
+            while let Some(row) = pages.next().await {
+                let (page, content) = row?;
                 if !T::validate(&content) {
                     println!("{}\t{}", page.id, page.url);
                     if reset {
-                        storage.reset_page(page_id).await?;
+                        storage.reset_page(page.id).await?;
                     }
                 }
             }

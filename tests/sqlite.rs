@@ -2,6 +2,7 @@ use crab::{
     prelude::*,
     storage::{Page, PageStatus, Storage},
 };
+use futures::StreamExt;
 use refinery::config::{Config, ConfigDbType};
 use std::fs::File;
 use tempfile::{tempdir, TempDir};
@@ -40,6 +41,28 @@ pub async fn write_and_read_pages_to_database() -> Result<()> {
     };
     assert_eq!(pages.len(), 1);
     assert_eq!(pages[0], expected_page);
+
+    Ok(())
+}
+
+#[test]
+pub async fn read_downloaded_pages() -> Result<()> {
+    let storage = new_storage().await?;
+    let storage = storage.as_ref();
+
+    let url = "http://test.com";
+    let expected_content = "<html>";
+    let new_id = storage.register_page(url, 0).await?.unwrap();
+    storage.write_page_content(new_id, expected_content).await?;
+
+    let mut pages = storage.read_downloaded_pages();
+    if let Some(row) = pages.next().await {
+        let (page, content) = row?;
+        assert_eq!(page.id, new_id);
+        assert_eq!(content, expected_content);
+    } else {
+        panic!("No pages found");
+    }
 
     Ok(())
 }

@@ -1,6 +1,10 @@
 use crate::prelude::*;
+use futures::{stream::BoxStream, StreamExt};
 use int_enum::IntEnum;
-use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
+use sqlx::{
+    sqlite::{SqlitePoolOptions, SqliteRow},
+    Row, SqlitePool,
+};
 use std::fmt;
 use url::Url;
 
@@ -57,22 +61,12 @@ impl Storage {
         Ok(row.0)
     }
 
-    pub async fn list_downloaded_pages(&self) -> Result<Vec<i64>> {
-        let row: Vec<(i64,)> =
-            sqlx::query_as("SELECT id FROM pages WHERE content IS NOT NULL AND status = ?")
-                .bind(PageStatus::Downloaded.int_value())
-                .fetch_all(&self.0)
-                .await?;
-        let row = row.into_iter().map(|(id,)| id).collect::<Vec<_>>();
-        Ok(row)
-    }
-
     pub async fn list_pages(&self) -> Result<Vec<Page>> {
         let query = "SELECT id, url, depth, status FROM pages";
         let result_set: Vec<PageRow> = sqlx::query_as(query).fetch_all(&self.0).await?;
         let mut pages = vec![];
         for row in result_set {
-            if let Some(page) = create_page(Some(row))? {
+            if let Some(page) = page_from_tuple(Some(row))? {
                 pages.push(page);
             }
         }
@@ -105,7 +99,7 @@ impl Storage {
             .await?;
         let mut pages = vec![];
         for row in result_set {
-            if let Some(page) = create_page(Some(row))? {
+            if let Some(page) = page_from_tuple(Some(row))? {
                 pages.push(page);
             }
         }
@@ -138,7 +132,7 @@ impl Storage {
                 .bind(id)
                 .fetch_optional(&self.0)
                 .await?;
-        create_page(content)
+        page_from_tuple(content)
     }
 
     pub async fn read_page_content(&self, id: i64) -> Result<Option<String>> {
@@ -148,6 +142,30 @@ impl Storage {
             .await?;
         Ok(content.map(|r| r.0))
     }
+
+    /// Lists downloaded pages and its content
+    pub fn read_downloaded_pages(&self) -> BoxStream<Result<(Page, String)>> {
+        let sql = "SELECT id, url, depth, status, content FROM pages WHERE content IS NOT NULL AND status = ?";
+        let r = sqlx::query(sql)
+            .bind(PageStatus::Downloaded.int_value())
+            .fetch(&self.0)
+            .map(page_from_row);
+        Box::pin(r)
+    }
+}
+
+fn page_from_row(row: StdResult<SqliteRow, sqlx::Error>) -> Result<(Page, String)> {
+    let row = row?;
+
+    let page_id = row.try_get::<i64, _>("id")?;
+    let url = row.try_get::<String, _>("url")?;
+    let depth = row.try_get::<u16, _>("depth")?;
+    let status = row.try_get::<u8, _>("status")?;
+
+    let page = page_from_tuple(Some((page_id, url, depth, status)))?.unwrap();
+    let content = row.try_get::<String, _>("content")?;
+
+    Ok((page, content))
 }
 
 /// Creates pages from tuple of its attributes
@@ -156,7 +174,7 @@ impl Storage {
 /// - url - String
 /// - depth - u16
 /// - status - u8
-fn create_page(row: Option<PageRow>) -> Result<Option<Page>> {
+fn page_from_tuple(row: Option<PageRow>) -> Result<Option<Page>> {
     if let Some((id, url, depth, status)) = row {
         let url = Url::parse(&url)?;
         let status = PageStatus::from_int(status)?;
