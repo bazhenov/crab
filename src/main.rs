@@ -8,31 +8,19 @@ use crab::{
     table::Table,
     Navigator,
 };
-use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
 use futures::{join, stream::FuturesUnordered, StreamExt};
 use reqwest::{Client, Proxy, Url};
 use std::{
     collections::HashSet,
-    fmt::format,
-    io::{self, stdout},
+    io::stdout,
     path::PathBuf,
     sync::{atomic::Ordering, Arc},
-    thread,
     time::{Duration, Instant},
 };
 use tokio::{task::spawn_blocking, time::sleep};
-use tui::{
-    backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
-    text::{Span, Spans},
-    widgets::{Block, Borders, List, ListItem},
-    Frame, Terminal,
-};
+
 mod cpu_database;
+mod terminal;
 mod test_server;
 
 #[derive(Parser, Debug)]
@@ -103,92 +91,6 @@ async fn main() -> Result<()> {
     entrypoint::<test_server::TestServer>().await
 }
 
-fn reporting_ui(state: Arc<Atom<Box<CrawlerState>>>, tick_rate: Duration) -> Result<()> {
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    let res = run_app(&mut terminal, state, tick_rate);
-
-    // restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
-    res?;
-    Ok(())
-}
-
-fn run_app<B: Backend>(
-    terminal: &mut Terminal<B>,
-    state: Arc<Atom<Box<CrawlerState>>>,
-    tick_rate: Duration,
-) -> io::Result<()> {
-    let mut last_tick = Instant::now();
-    let mut current_state: Option<Box<CrawlerState>> = None;
-    loop {
-        if let Some(state) = state.take(Ordering::Relaxed) {
-            current_state = Some(state);
-        }
-
-        if let Some(state) = &current_state {
-            terminal.draw(|f| ui(f, state))?;
-        }
-
-        let timeout = tick_rate
-            .checked_sub(last_tick.elapsed())
-            .unwrap_or_else(|| Duration::from_secs(0));
-        if crossterm::event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') => return Ok(()),
-                    _ => {}
-                }
-            }
-        }
-        if last_tick.elapsed() >= tick_rate {
-            // app.on_tick();
-            last_tick = Instant::now();
-        }
-    }
-}
-
-fn ui<B: Backend>(f: &mut Frame<B>, state: &CrawlerState) {
-    let layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Max(5), Constraint::Percentage(50)].as_ref())
-        .split(f.size());
-
-    let metrics = List::new(vec![
-        ListItem::new(format!("Number of requests: {}", state.requests)),
-        ListItem::new(format!(
-            "Number of requests in flight: {}",
-            state.requests_in_flight.len()
-        )),
-    ])
-    .block(Block::default().borders(Borders::ALL).title("Metrics"));
-
-    let requests = state
-        .requests_in_flight
-        .iter()
-        .map(|r| ListItem::new(r.url.to_string()))
-        .collect::<Vec<_>>();
-    let requests = List::new(requests).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Requests in flight"),
-    );
-
-    f.render_widget(metrics, layout[0]);
-    f.render_widget(requests, layout[1]);
-}
-
 async fn entrypoint<T>() -> Result<()>
 where
     T: Navigator,
@@ -203,8 +105,7 @@ where
             let tick_interval = Duration::from_millis(100);
             let reporting_handle = {
                 let report = report.clone();
-                let tick_interval = tick_interval.clone();
-                spawn_blocking(move || reporting_ui(report, tick_interval))
+                spawn_blocking(move || terminal::reporting_ui(report, tick_interval))
             };
             let crawling_handle = run_crawler::<T>(storage, opts, (report.clone(), tick_interval));
             let (a, b) = join!(reporting_handle, crawling_handle);
@@ -311,7 +212,7 @@ where
 }
 
 #[derive(Clone, Default)]
-struct CrawlerState {
+pub struct CrawlerState {
     /// Number of requests crawler initiated from the start of it's running
     requests: u32,
     requests_in_flight: HashSet<Page>,
@@ -387,10 +288,8 @@ async fn run_crawler<T: Navigator>(
                                     storage.register_page(link.as_str(), page.depth + 1).await?;
                                 }
                             }
-                        } else {
-                            if let Some(proxy) = proxy {
-                                proxies.proxy_failed(proxy);
-                            }
+                        } else if let Some(proxy) = proxy {
+                            proxies.proxy_failed(proxy);
                         }
                     }
                     Err(e) => {
@@ -438,7 +337,7 @@ async fn download(client: Client, url: &str) -> Result<String> {
 }
 
 /// Returns a closure for a filtering on a key contains a string
-fn key_contains<'a, T>(needle: &'a Option<String>) -> impl Fn(&(String, T)) -> bool + 'a {
+fn key_contains<T>(needle: &Option<String>) -> impl Fn(&(String, T)) -> bool + '_ {
     move |(key, _): &(String, T)| match needle {
         Some(needle) => key.to_lowercase().contains(&needle.to_lowercase()),
         _ => false,
