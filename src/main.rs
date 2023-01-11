@@ -88,7 +88,7 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    entrypoint::<test_server::TestServer>().await
+    entrypoint::<cpu_database::CpuDatabase>().await
 }
 
 async fn entrypoint<T>() -> Result<()>
@@ -126,7 +126,7 @@ where
         }
 
         Commands::AddSeed { seed } => {
-            storage.register_page(&seed, 0).await?;
+            storage.register_page(seed.as_str(), 0).await?;
         }
 
         Commands::Navigate { page_id } => {

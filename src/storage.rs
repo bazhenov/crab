@@ -82,9 +82,12 @@ impl Storage {
     /// Registers new page
     ///
     /// If page with given rul already exists, [`Option::None`] is returned.
-    pub async fn register_page(&self, url: &str, depth: u16) -> Result<Option<i64>> {
+    pub async fn register_page<U: TryInto<Url>>(&self, url: U, depth: u16) -> Result<Option<i64>>
+    where
+        U::Error: Sync + Send + std::error::Error + 'static,
+    {
         let new_id = sqlx::query("INSERT OR IGNORE INTO pages (url, depth) VALUES (?, ?)")
-            .bind(url)
+            .bind(url.try_into()?.to_string())
             .bind(depth)
             .execute(&self.0)
             .await?
