@@ -8,7 +8,7 @@ use crab::{
     table::Table,
     Navigator,
 };
-use futures::{join, stream::FuturesUnordered, StreamExt};
+use futures::{select, stream::FuturesUnordered, FutureExt, StreamExt};
 use reqwest::{Client, Proxy, Url};
 use std::{
     collections::HashSet,
@@ -103,14 +103,26 @@ where
         Commands::RunCrawler(opts) => {
             let report = Arc::new(Atom::empty());
             let tick_interval = Duration::from_millis(100);
-            let reporting_handle = {
+            let terminal_handle = {
                 let report = report.clone();
-                spawn_blocking(move || terminal::reporting_ui(report, tick_interval))
+                spawn_blocking(move || terminal::ui(report, tick_interval))
             };
             let crawling_handle = run_crawler::<T>(storage, opts, (report.clone(), tick_interval));
-            let (a, b) = join!(reporting_handle, crawling_handle);
-            a??;
-            b?;
+
+            let mut crawler_handle = Box::pin(crawling_handle.fuse());
+            let mut terminal_handle = Box::pin(terminal_handle.fuse());
+
+            select! {
+                terminal_result = terminal_handle => {
+                    terminal_result??;
+                    // If terminal is finished first we do not want to wait on crawler
+                },
+                crawler_result = crawler_handle => {
+                    crawler_result?;
+                    // If crawler is finished first we still need to wait on terminal
+                    terminal_handle.await??;
+                },
+            };
         }
 
         Commands::AddSeed { seed } => {

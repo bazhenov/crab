@@ -18,14 +18,14 @@ use tui::{
     Frame, Terminal,
 };
 
-pub fn reporting_ui(state: Arc<Atom<Box<CrawlerState>>>, tick_rate: Duration) -> Result<()> {
+pub fn ui(state: Arc<Atom<Box<CrawlerState>>>, tick_rate: Duration) -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let res = run_app(&mut terminal, state, tick_rate);
+    let res = run_terminal(&mut terminal, state, tick_rate);
 
     // restore terminal
     disable_raw_mode()?;
@@ -40,7 +40,7 @@ pub fn reporting_ui(state: Arc<Atom<Box<CrawlerState>>>, tick_rate: Duration) ->
     Ok(())
 }
 
-fn run_app<B: Backend>(
+fn run_terminal<B: Backend>(
     terminal: &mut Terminal<B>,
     state: Arc<Atom<Box<CrawlerState>>>,
     tick_duration: Duration,
@@ -51,7 +51,7 @@ fn run_app<B: Backend>(
         current_state = state.take(Ordering::Relaxed).or(current_state);
 
         if let Some(state) = &current_state {
-            terminal.draw(|f| ui(f, state))?;
+            terminal.draw(|f| draw_widgets(f, state))?;
         }
 
         let timeout = tick_duration
@@ -70,7 +70,7 @@ fn run_app<B: Backend>(
     }
 }
 
-fn ui(f: &mut Frame<impl Backend>, state: &CrawlerState) {
+fn draw_widgets(f: &mut Frame<impl Backend>, state: &CrawlerState) {
     let metrics = List::new([
         ListItem::new(format!("Number of requests: {}", state.requests)),
         ListItem::new(format!(
@@ -83,7 +83,8 @@ fn ui(f: &mut Frame<impl Backend>, state: &CrawlerState) {
     let requests = state
         .requests_in_flight
         .iter()
-        .map(|r| ListItem::new(r.url.to_string()))
+        .map(|r| r.url.to_string())
+        .map(ListItem::new)
         .collect::<Vec<_>>();
     let requests = List::new(requests).block(
         Block::default()
