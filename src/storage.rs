@@ -66,9 +66,7 @@ impl Storage {
         let result_set: Vec<PageRow> = sqlx::query_as(query).fetch_all(&self.0).await?;
         let mut pages = vec![];
         for row in result_set {
-            if let Some(page) = page_from_tuple(Some(row))? {
-                pages.push(page);
-            }
+            pages.push(page_from_tuple(row)?);
         }
         Ok(pages)
     }
@@ -99,9 +97,7 @@ impl Storage {
             .await?;
         let mut pages = vec![];
         for row in result_set {
-            if let Some(page) = page_from_tuple(Some(row))? {
-                pages.push(page);
-            }
+            pages.push(page_from_tuple(row)?);
         }
         Ok(pages)
     }
@@ -132,7 +128,11 @@ impl Storage {
                 .bind(id)
                 .fetch_optional(&self.0)
                 .await?;
-        page_from_tuple(content)
+        if let Some(content) = content {
+            page_from_tuple(content).map(Some)
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn read_page_content(&self, id: i64) -> Result<Option<String>> {
@@ -161,8 +161,8 @@ fn page_from_row(row: StdResult<SqliteRow, sqlx::Error>) -> Result<(Page, String
     let url = row.try_get::<String, _>("url")?;
     let depth = row.try_get::<u16, _>("depth")?;
     let status = row.try_get::<u8, _>("status")?;
+    let page = page_from_tuple((page_id, url, depth, status))?;
 
-    let page = page_from_tuple(Some((page_id, url, depth, status)))?.unwrap();
     let content = row.try_get::<String, _>("content")?;
 
     Ok((page, content))
@@ -174,17 +174,14 @@ fn page_from_row(row: StdResult<SqliteRow, sqlx::Error>) -> Result<(Page, String
 /// - url - String
 /// - depth - u16
 /// - status - u8
-fn page_from_tuple(row: Option<PageRow>) -> Result<Option<Page>> {
-    if let Some((id, url, depth, status)) = row {
-        let url = Url::parse(&url)?;
-        let status = PageStatus::from_int(status)?;
-        Ok(Some(Page {
-            id,
-            url,
-            depth,
-            status,
-        }))
-    } else {
-        Ok(None)
-    }
+fn page_from_tuple(row: PageRow) -> Result<Page> {
+    let (id, url, depth, status) = row;
+    let url = Url::parse(&url)?;
+    let status = PageStatus::from_int(status)?;
+    Ok(Page {
+        id,
+        url,
+        depth,
+        status,
+    })
 }
