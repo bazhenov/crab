@@ -9,6 +9,7 @@ pub(crate) struct CpuDatabase;
 lazy_static! {
     static ref TD_SELECTOR: Selector = Selector::parse("td").unwrap();
     static ref TH_SELECTOR: Selector = Selector::parse("th").unwrap();
+    static ref NAME_SELECTOR: Selector = Selector::parse("h1.cpuname").unwrap();
     static ref ROW_SELECTOR: Selector = Selector::parse(".details table tr").unwrap();
     static ref LINK_SELECTOR: Selector = Selector::parse("a").unwrap();
 }
@@ -31,6 +32,12 @@ impl Navigator for CpuDatabase {
     fn kv(content: &str) -> Result<HashMap<String, String>> {
         let document = Html::parse_document(content);
         let mut kv = HashMap::new();
+
+        if let Some(name) = document.select(&NAME_SELECTOR).next() {
+            kv.insert("name".to_owned(), name.inner_html());
+        } else {
+            return Ok(kv);
+        }
         for f in document.select(&ROW_SELECTOR) {
             let th = f.select(&TH_SELECTOR).next();
             let td = f.select(&TD_SELECTOR).next();
