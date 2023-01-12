@@ -66,13 +66,13 @@ enum Commands {
     /// run KV-extraction rules on a given page and print results
     Kv {
         #[arg(short, long)]
-        name: Option<String>,
+        name: Vec<String>,
         page_id: i64,
     },
     /// run KV-extraction rules on all pages and exports CSV
     ExportCsv {
         #[arg(short, long)]
-        name: Option<String>,
+        name: Vec<String>,
     },
     /// list pages in database
     ListPages,
@@ -335,9 +335,17 @@ async fn download(client: Client, url: &str) -> Result<String> {
 }
 
 /// Returns a closure for a filtering on a key contains a string
-fn key_contains<T>(needle: &Option<String>) -> impl Fn(&(String, T)) -> bool + '_ {
-    move |(key, _): &(String, T)| match needle {
-        Some(needle) => key.to_lowercase().contains(&needle.to_lowercase()),
-        _ => false,
+fn key_contains<T>(needles: &Vec<String>) -> impl Fn(&(String, T)) -> bool + '_ {
+    move |(key, _): &(String, T)| {
+        if needles.is_empty() {
+            return true;
+        } else {
+            for needle in needles {
+                if key.to_lowercase().contains(&needle.to_lowercase()) {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 }
