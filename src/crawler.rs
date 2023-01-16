@@ -80,6 +80,9 @@ enum Commands {
     },
     /// prints a page
     Dump { page_id: i64 },
+
+    /// resets page download status
+    Reset { page_id: i64 },
 }
 
 pub async fn entrypoint<T>() -> Result<()>
@@ -195,6 +198,8 @@ where
                 .ok_or(AppError::PageNotFound(page_id))?;
             println!("{}", content);
         }
+
+        Commands::Reset { page_id } => storage.reset_page(page_id).await?,
     }
 
     Ok(())
@@ -204,6 +209,9 @@ where
 pub(crate) struct CrawlerState {
     /// Number of requests crawler initiated from the start of it's running
     pub(crate) requests: u32,
+    /// Number of requests finished successfully
+    pub(crate) successfull_requests: u32,
+    pub(crate) new_links_found: u32,
     pub(crate) requests_in_flight: HashSet<Page>,
 }
 
@@ -267,6 +275,7 @@ async fn run_crawler<T: Navigator>(
                 match response {
                     Ok(content) => {
                         if T::validate(&content) {
+                            state.successfull_requests += 1;
                             storage.write_page_content(page.id, &content).await?;
                             if let Some(proxy) = proxy {
                                 proxies.proxy_succeseed(proxy);
@@ -274,7 +283,12 @@ async fn run_crawler<T: Navigator>(
 
                             if opts.navigate {
                                 for link in T::next_pages(&page, &content)? {
-                                    storage.register_page(link.as_str(), page.depth + 1).await?;
+                                    let page_id = storage
+                                        .register_page(link.as_str(), page.depth + 1)
+                                        .await?;
+                                    if page_id.is_some() {
+                                        state.new_links_found += 1;
+                                    }
                                 }
                             }
                         } else if let Some(proxy) = proxy {

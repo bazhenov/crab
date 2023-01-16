@@ -76,6 +76,14 @@ fn draw_widgets(f: &mut Frame<impl Backend>, state: &CrawlerState) {
             "Number of requests in flight: {}",
             state.requests_in_flight.len()
         )),
+        ListItem::new(format!(
+            "Number of successfull requests: {}",
+            state.successfull_requests
+        )),
+        ListItem::new(format!(
+            "Number of new links found: {}",
+            state.new_links_found
+        )),
     ])
     .block(Block::default().borders(Borders::ALL).title("Metrics"));
 
@@ -93,7 +101,7 @@ fn draw_widgets(f: &mut Frame<impl Backend>, state: &CrawlerState) {
 
     let layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Max(5), Constraint::Percentage(50)].as_ref())
+        .constraints([Constraint::Max(6), Constraint::Percentage(50)].as_ref())
         .split(f.size());
 
     f.render_widget(metrics, layout[0]);
