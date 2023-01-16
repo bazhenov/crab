@@ -32,11 +32,18 @@ pub mod prelude {
     }
 }
 
+/// Base type allowing user to provide parsing rules
 pub trait Navigator {
+    /// Parse next pages referenced in the content
     fn next_pages(page: &Page, content: &str) -> Result<Vec<Url>>;
 
+    /// Validates page content
+    ///
+    /// If page is not valid it's content will not be written to storage
+    /// and crawler will repeat request to the page
     fn validate(content: &str) -> bool;
 
+    /// Returns parsed key-value pairs for the page]
     fn kv(content: &str) -> Result<HashMap<String, String>>;
 }
 
