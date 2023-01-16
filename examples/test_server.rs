@@ -1,9 +1,14 @@
-use crab::{normalize_url, prelude::*, storage::Page, Navigator};
+use crab::{entrypoint, normalize_url, prelude::*, Navigator, Page};
 use scraper::{Html, Selector};
 use std::collections::HashMap;
 use url::Url;
 
-pub(crate) struct TestServer;
+#[tokio::main]
+async fn main() -> Result<()> {
+    entrypoint::<TestServer>().await
+}
+
+struct TestServer;
 
 impl Navigator for TestServer {
     fn next_pages(page: &Page, content: &str) -> Result<Vec<Url>> {

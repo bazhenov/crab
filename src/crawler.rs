@@ -1,13 +1,13 @@
-use anyhow::Context;
-use atom::Atom;
-use clap::Parser;
-use crab::{
+use crate::{
     prelude::*,
     proxy::Proxies,
     storage::{Page, Storage},
     table::Table,
-    Navigator,
+    terminal, Navigator,
 };
+use anyhow::Context;
+use atom::Atom;
+use clap::Parser;
 use futures::{select, stream::FuturesUnordered, FutureExt, StreamExt};
 use reqwest::{Client, Proxy, Url};
 use std::{
@@ -18,10 +18,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{task::spawn_blocking, time::sleep};
-
-mod cpu_database;
-mod terminal;
-mod test_server;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -86,12 +82,7 @@ enum Commands {
     Dump { page_id: i64 },
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    entrypoint::<cpu_database::CpuDatabase>().await
-}
-
-async fn entrypoint<T>() -> Result<()>
+pub async fn entrypoint<T>() -> Result<()>
 where
     T: Navigator,
 {
@@ -210,10 +201,10 @@ where
 }
 
 #[derive(Clone, Default)]
-pub struct CrawlerState {
+pub(crate) struct CrawlerState {
     /// Number of requests crawler initiated from the start of it's running
-    requests: u32,
-    requests_in_flight: HashSet<Page>,
+    pub(crate) requests: u32,
+    pub(crate) requests_in_flight: HashSet<Page>,
 }
 
 async fn run_crawler<T: Navigator>(

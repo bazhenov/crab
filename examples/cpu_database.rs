@@ -1,10 +1,15 @@
-use crab::{normalize_url, prelude::*, storage::Page, Navigator};
+use crab::{entrypoint, normalize_url, prelude::*, Navigator, Page};
 use lazy_static::lazy_static;
 use scraper::{Html, Selector};
 use std::collections::HashMap;
 use url::Url;
 
-pub(crate) struct CpuDatabase;
+#[tokio::main]
+async fn main() -> Result<()> {
+    entrypoint::<CpuDatabase>().await
+}
+
+struct CpuDatabase;
 
 lazy_static! {
     static ref TD_SELECTOR: Selector = Selector::parse("td").unwrap();

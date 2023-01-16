@@ -1,11 +1,14 @@
+pub use crawler::entrypoint;
 use prelude::*;
 use std::collections::HashMap;
-use storage::Page;
+pub use storage::Page;
 use url::Url;
 
-pub mod proxy;
+pub(crate) mod crawler;
+pub(crate) mod proxy;
 pub mod storage;
-pub mod table;
+pub(crate) mod table;
+pub(crate) mod terminal;
 
 pub mod prelude {
 

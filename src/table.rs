@@ -3,7 +3,7 @@ use csv::Writer;
 use std::io::Write;
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub(crate) enum Error {
     #[error("No columns defined for table")]
     NoColumns,
 
@@ -18,7 +18,7 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn add_row(&mut self, row: impl IntoIterator<Item = (String, String)>) {
+    pub(crate) fn add_row(&mut self, row: impl IntoIterator<Item = (String, String)>) {
         let mut row_as_vec = vec![];
         for (key, value) in row.into_iter() {
             let column = self.columns.iter().enumerate().find(|c| c.1 == &key);
@@ -37,7 +37,10 @@ impl Table {
         }
     }
 
-    pub fn write(&self, out: &mut impl Write) -> StdResult<(), Error> {
+    pub(crate) fn write(&self, out: &mut impl Write) -> StdResult<(), Error> {
+        if self.columns.is_empty() {
+            return Err(Error::NoColumns);
+        }
         let mut csv = Writer::from_writer(out);
         csv.write_record(&self.columns)?;
 

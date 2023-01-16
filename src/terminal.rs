@@ -1,6 +1,5 @@
-use crate::CrawlerState;
+use crate::{crawler::CrawlerState, prelude::*};
 use atom::Atom;
-use crab::prelude::*;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -18,7 +17,7 @@ use tui::{
     Frame, Terminal,
 };
 
-pub fn ui(state: Arc<Atom<Box<CrawlerState>>>, tick_rate: Duration) -> Result<()> {
+pub(crate) fn ui(state: Arc<Atom<Box<CrawlerState>>>, tick_rate: Duration) -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
