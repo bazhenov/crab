@@ -1,209 +1,20 @@
 use crate::{
+    cli::RunCrawlerOpts,
     prelude::*,
     proxy::Proxies,
     storage::{Page, Storage},
-    table::Table,
-    terminal, Navigator,
+    Navigator,
 };
 use anyhow::Context;
 use atom::Atom;
-use clap::Parser;
-use futures::{select, stream::FuturesUnordered, FutureExt, StreamExt};
+use futures::{stream::FuturesUnordered, StreamExt};
 use reqwest::{Client, Proxy, Url};
 use std::{
     collections::HashSet,
-    io::stdout,
-    path::PathBuf,
     sync::{atomic::Ordering, Arc},
     time::{Duration, Instant},
 };
-use tokio::{task::spawn_blocking, time::sleep};
-
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Opts {
-    #[arg(short, long, value_name = "file", default_value = "./db.sqlite")]
-    database: String,
-
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Parser, Debug)]
-struct RunCrawlerOpts {
-    /// after downloading each page parse next pages
-    #[arg(long, default_value = "false")]
-    navigate: bool,
-
-    /// timeout between requests in seconds
-    #[arg(long, default_value = "0.0")]
-    timeout_sec: f32,
-
-    /// number of threads
-    #[arg(long, default_value = "5")]
-    threads: usize,
-
-    /// path to proxies list
-    #[arg(short, long)]
-    proxies_list: Option<PathBuf>,
-}
-
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-enum Commands {
-    /// running crawler and download pages from internet
-    RunCrawler(RunCrawlerOpts),
-    /// add seed page to the database
-    AddSeed { seed: String },
-    /// run navigation rules on a given page and print outgoing links
-    Navigate { page_id: i64 },
-    /// run navigation rules on all downloaded pages and writes found links back to pages database
-    NavigateAll,
-    /// run KV-extraction rules on a given page and print results
-    Kv {
-        #[arg(short, long)]
-        name: Vec<String>,
-        page_id: i64,
-    },
-    /// run KV-extraction rules on all pages and exports CSV
-    ExportCsv {
-        #[arg(short, long)]
-        name: Vec<String>,
-    },
-    /// list pages in database
-    ListPages,
-    /// prints pages failed validation check
-    Validate {
-        /// resets not valid pages to initial state
-        #[arg(short, long)]
-        reset: bool,
-    },
-    /// prints a page
-    Dump { page_id: i64 },
-
-    /// resets page download status
-    Reset { page_id: i64 },
-}
-
-pub async fn entrypoint<T>() -> Result<()>
-where
-    T: Navigator,
-{
-    env_logger::init();
-    let opts = Opts::parse();
-    let storage = Storage::new(&opts.database).await?;
-
-    match opts.command {
-        Commands::RunCrawler(opts) => {
-            let report = Arc::new(Atom::empty());
-            let tick_interval = Duration::from_millis(100);
-            let terminal_handle = {
-                let report = report.clone();
-                spawn_blocking(move || terminal::ui(report, tick_interval))
-            };
-            let crawling_handle = run_crawler::<T>(storage, opts, (report.clone(), tick_interval));
-
-            let mut crawler_handle = Box::pin(crawling_handle.fuse());
-            let mut terminal_handle = Box::pin(terminal_handle.fuse());
-
-            select! {
-                terminal_result = terminal_handle => {
-                    terminal_result??;
-                    // If terminal is finished first we do not want to wait on crawler
-                },
-                crawler_result = crawler_handle => {
-                    crawler_result?;
-                    // If crawler is finished first we still need to wait on terminal
-                    terminal_handle.await??;
-                },
-            };
-        }
-
-        Commands::AddSeed { seed } => {
-            storage.register_page(seed.as_str(), 0).await?;
-        }
-
-        Commands::Navigate { page_id } => {
-            let content = storage
-                .read_page_content(page_id)
-                .await?
-                .ok_or(AppError::PageNotFound(page_id))?;
-            let page = storage
-                .read_page(page_id)
-                .await?
-                .ok_or(AppError::PageNotFound(page_id))?;
-            let links = T::next_pages(&page, &content)?;
-            for link in links {
-                println!("{}", link);
-            }
-        }
-
-        Commands::NavigateAll => {
-            let mut pages = storage.read_downloaded_pages();
-
-            while let Some(row) = pages.next().await {
-                let (page, content) = row?;
-                for link in T::next_pages(&page, &content)? {
-                    storage.register_page(link.as_str(), page.depth + 1).await?;
-                }
-            }
-        }
-
-        Commands::Kv { name, page_id } => {
-            let content = storage
-                .read_page_content(page_id)
-                .await?
-                .ok_or(AppError::PageNotFound(page_id))?;
-            let kv = T::kv(&content)?;
-            for (key, value) in kv.into_iter().filter(key_contains(&name)) {
-                println!("{}: {}", &key, &value)
-            }
-        }
-
-        Commands::ExportCsv { name } => {
-            let mut table = Table::default();
-            let mut pages = storage.read_downloaded_pages();
-
-            while let Some(row) = pages.next().await {
-                let (_, content) = row?;
-                let kv = T::kv(&content)?.into_iter().filter(key_contains(&name));
-                table.add_row(kv);
-            }
-            table.write(&mut stdout())?;
-        }
-
-        Commands::ListPages => {
-            for page in storage.list_pages().await? {
-                println!("{}", page);
-            }
-        }
-
-        Commands::Validate { reset } => {
-            let mut pages = storage.read_downloaded_pages();
-            while let Some(row) = pages.next().await {
-                let (page, content) = row?;
-                if !T::validate(&content) {
-                    println!("{}\t{}", page.id, page.url);
-                    if reset {
-                        storage.reset_page(page.id).await?;
-                    }
-                }
-            }
-        }
-
-        Commands::Dump { page_id } => {
-            let content = storage
-                .read_page_content(page_id)
-                .await?
-                .ok_or(AppError::PageNotFound(page_id))?;
-            println!("{}", content);
-        }
-
-        Commands::Reset { page_id } => storage.reset_page(page_id).await?,
-    }
-
-    Ok(())
-}
+use tokio::time::sleep;
 
 #[derive(Clone, Default)]
 pub(crate) struct CrawlerState {
@@ -215,7 +26,7 @@ pub(crate) struct CrawlerState {
     pub(crate) requests_in_flight: HashSet<Page>,
 }
 
-async fn run_crawler<T: Navigator>(
+pub(crate) async fn run_crawler<T: Navigator>(
     storage: Storage,
     opts: RunCrawlerOpts,
     report: (Arc<Atom<Box<CrawlerState>>>, Duration),
@@ -337,20 +148,4 @@ async fn fetch_content(client: Client, url: Url, delay: Duration) -> Result<Stri
 
 async fn download(client: Client, url: &str) -> Result<String> {
     Ok(client.get(url).send().await?.text().await?)
-}
-
-/// Returns a closure for a filtering on a key contains a string
-fn key_contains<T>(needles: &Vec<String>) -> impl Fn(&(String, T)) -> bool + '_ {
-    move |(key, _): &(String, T)| {
-        if needles.is_empty() {
-            return true;
-        } else {
-            for needle in needles {
-                if key.to_lowercase().contains(&needle.to_lowercase()) {
-                    return true;
-                }
-            }
-            return false;
-        }
-    }
 }
