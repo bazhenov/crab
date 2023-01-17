@@ -96,9 +96,8 @@ pub(crate) async fn run_crawler<T: Navigator>(
 
                             if opts.navigate {
                                 for link in T::next_pages(&page, &content)? {
-                                    let page_id = storage
-                                        .register_page(link.as_str(), page.depth + 1)
-                                        .await?;
+                                    let page_id =
+                                        storage.register_page(link, page.depth + 1).await?;
                                     if page_id.is_some() {
                                         state.new_links_found += 1;
                                     }

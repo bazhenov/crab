@@ -103,12 +103,12 @@ where
             let mut terminal_handle = Box::pin(terminal_handle.fuse());
 
             select! {
-                terminal_result = terminal_handle => {
-                    terminal_result??;
+                result = terminal_handle => {
+                    result??;
                     // If terminal is finished first we do not want to wait on crawler
                 },
-                crawler_result = crawler_handle => {
-                    crawler_result?;
+                result = crawler_handle => {
+                    result?;
                     // If crawler is finished first we still need to wait on terminal
                     terminal_handle.await??;
                 },
@@ -205,14 +205,14 @@ where
 fn key_contains<T>(needles: &Vec<String>) -> impl Fn(&(String, T)) -> bool + '_ {
     move |(key, _): &(String, T)| {
         if needles.is_empty() {
-            return true;
+            true
         } else {
             for needle in needles {
                 if key.to_lowercase().contains(&needle.to_lowercase()) {
                     return true;
                 }
             }
-            return false;
+            false
         }
     }
 }
