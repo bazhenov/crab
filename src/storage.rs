@@ -73,7 +73,7 @@ impl Storage {
 
     /// Registers new page
     ///
-    /// If page with given rul already exists, [`Option::None`] is returned.
+    /// If page with given URL already exists, [`Option::None`] is returned.
     pub async fn register_page<U: TryInto<Url>>(&self, url: U, depth: u16) -> Result<Option<i64>>
     where
         U::Error: Sync + Send + std::error::Error + 'static,

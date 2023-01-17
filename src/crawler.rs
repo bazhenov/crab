@@ -22,7 +22,9 @@ pub(crate) struct CrawlerState {
     pub(crate) requests: u32,
     /// Number of requests finished successfully
     pub(crate) successfull_requests: u32,
+    /// Number of new links has been found
     pub(crate) new_links_found: u32,
+    /// The set of ongoing requests
     pub(crate) requests_in_flight: HashSet<Page>,
 }
 
