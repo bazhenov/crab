@@ -10,6 +10,7 @@ pub(crate) mod proxy;
 pub mod storage;
 pub(crate) mod table;
 pub(crate) mod terminal;
+pub mod utils;
 
 pub mod prelude {
 
