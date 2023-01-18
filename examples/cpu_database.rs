@@ -1,4 +1,4 @@
-use crab::{entrypoint, normalize_url, prelude::*, Navigator, Page};
+use crab::{entrypoint, prelude::*, Navigator, Page};
 use lazy_static::lazy_static;
 use scraper::{Html, Selector};
 use std::collections::HashMap;
@@ -33,7 +33,7 @@ impl Navigator for CpuDatabase {
         for f in document.select(&LINK_SELECTOR) {
             if let Some(link) = f.value().attr("href") {
                 if link.starts_with("/cpu-specs/") {
-                    links.push(normalize_url(&page.url, link)?);
+                    links.push(page.url.join(link)?);
                 }
             }
         }
@@ -43,7 +43,7 @@ impl Navigator for CpuDatabase {
             if form_url.is_empty() {
                 continue;
             }
-            let url = normalize_url(&page.url, form_url)?;
+            let url = page.url.join(form_url)?;
 
             for select in form.select(&SELECT_SELECTOR) {
                 let filter_name = select.value().attr("name").unwrap_or_default();

@@ -1,4 +1,4 @@
-use crab::{entrypoint, normalize_url, prelude::*, Navigator, Page};
+use crab::{entrypoint, prelude::*, Navigator, Page};
 use scraper::{Html, Selector};
 use std::collections::HashMap;
 use url::Url;
@@ -20,14 +20,14 @@ impl Navigator for TestServer {
             Selector::parse("section.pager a").map_err(|_e| AppError::InvalidSelector)?;
         for f in document.select(&selector) {
             if let Some(link) = f.value().attr("href") {
-                links.push(normalize_url(&page.url, link)?);
+                links.push(page.url.join(link)?);
             }
         }
 
         let selector = Selector::parse("ul a").map_err(|_e| AppError::InvalidSelector)?;
         for f in document.select(&selector) {
             if let Some(link) = f.value().attr("href") {
-                links.push(normalize_url(&page.url, link)?);
+                links.push(page.url.join(link)?);
             }
         }
         Ok(links)
