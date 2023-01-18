@@ -85,46 +85,56 @@ pub(crate) async fn run_crawler<T: Navigator>(
                 let (proxy, page, response) = completed?;
                 state.requests_in_flight.remove(&page);
 
-                match response {
+                let success = match response {
                     Ok(content) => {
-                        if T::validate(&content) {
+                        let valid_page = T::validate(&content);
+                        if valid_page {
                             state.successfull_requests += 1;
                             storage.write_page_content(page.id, &content).await?;
-                            if let Some(proxy) = proxy {
-                                proxies.proxy_succeseed(proxy);
-                            }
 
                             if opts.navigate {
-                                match T::next_pages(&page, &content) {
-                                    Ok(links) => {
-                                        for link in links {
-                                            let page_id =
-                                                storage.register_page(link, page.depth + 1).await?;
-                                            if page_id.is_some() {
-                                                state.new_links_found += 1;
-                                            }
-                                        }
-                                    }
-                                    Err(e) => error!(
-                                        "next_pages() method failed on page #{}: {}",
-                                        page.id, e
-                                    ),
-                                }
+                                navigate_page::<T>(&page, &content, &storage, &mut state).await?;
                             }
-                        } else if let Some(proxy) = proxy {
-                            proxies.proxy_failed(proxy);
                         }
+
+                        valid_page
                     }
                     Err(e) => {
                         debug!("Unable to download: {}", page.url);
                         trace!("{}", e);
-                        if let Some(proxy) = proxy {
-                            proxies.proxy_failed(proxy);
-                        }
+                        false
+                    }
+                };
+
+                if let Some(proxy) = proxy {
+                    if success {
+                        proxies.proxy_succeseed(proxy);
+                    } else {
+                        proxies.proxy_failed(proxy);
                     }
                 }
             }
         }
+    }
+    Ok(())
+}
+
+async fn navigate_page<T: Navigator>(
+    page: &Page,
+    content: &str,
+    storage: &Storage,
+    state: &mut CrawlerState,
+) -> Result<()> {
+    match T::next_pages(page, content) {
+        Ok(links) => {
+            for link in links {
+                let page_id = storage.register_page(link, page.depth + 1).await?;
+                if page_id.is_some() {
+                    state.new_links_found += 1;
+                }
+            }
+        }
+        Err(e) => error!("next_pages() method failed on page #{}: {}", page.id, e),
     }
     Ok(())
 }
