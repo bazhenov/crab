@@ -1,4 +1,9 @@
-use crab::{entrypoint, prelude::*, Navigator, Page};
+use crab::{
+    entrypoint,
+    prelude::*,
+    utils::{url_set_query_param, Form},
+    Navigator, Page,
+};
 use lazy_static::lazy_static;
 use scraper::{Html, Selector};
 use std::collections::HashMap;
@@ -17,11 +22,9 @@ lazy_static! {
     static ref NAME_SELECTOR: Selector = Selector::parse("h1.cpuname").unwrap();
     static ref ROW_SELECTOR: Selector = Selector::parse(".details table tr").unwrap();
     static ref LINK_SELECTOR: Selector = Selector::parse("a").unwrap();
-    static ref FORM_SELECTOR: Selector =
-        Selector::parse("form#form[action]:not([action=''])").unwrap();
-    static ref SELECT_SELECTOR: Selector = Selector::parse("select").unwrap();
-    static ref OPTION_SELECTOR: Selector =
-        Selector::parse("option[value]:not([value=''])").unwrap();
+    static ref FORM: Selector = Selector::parse("form#form[action]:not([action=''])").unwrap();
+    static ref FIELDS: Selector = Selector::parse("select").unwrap();
+    static ref FIELD_VALUE: Selector = Selector::parse("option[value]:not([value=''])").unwrap();
     static ref ALLOWED_FILTERS: Vec<&'static str> = vec!["mfgr", "released"];
 }
 
@@ -38,26 +41,23 @@ impl Navigator for CpuDatabase {
             }
         }
 
-        for form in document.select(&FORM_SELECTOR) {
-            let form_url = form.value().attr("action").unwrap_or_default();
-            if form_url.is_empty() {
-                continue;
-            }
-            let url = page.url.join(form_url)?;
-
-            for select in form.select(&SELECT_SELECTOR) {
-                let filter_name = select.value().attr("name").unwrap_or_default();
-                if filter_name == "" || !ALLOWED_FILTERS.contains(&filter_name) {
-                    continue;
-                }
-                for option in select.select(&OPTION_SELECTOR) {
-                    let mut url = url.clone();
-                    let value = option.value().attr("value").unwrap_or_default();
-                    if value.is_empty() {
+        if let Some(form) = document.select(&FORM).next() {
+            let fields = form.select(&FIELDS);
+            let form = Form::new(&page.url, form);
+            if let Some(form_url) = form.action() {
+                for select in fields {
+                    let field_name = select.value().attr("name").unwrap_or_default();
+                    if field_name.is_empty() || !ALLOWED_FILTERS.contains(&field_name) {
                         continue;
                     }
-                    url.query_pairs_mut().append_pair(filter_name, value);
-                    links.push(url);
+                    for field_value in select.select(&FIELD_VALUE) {
+                        let field_value = field_value.value().attr("value").unwrap_or_default();
+                        if field_value.is_empty() {
+                            continue;
+                        }
+                        let url = url_set_query_param(&form_url, field_name, field_value);
+                        links.push(url);
+                    }
                 }
             }
         }

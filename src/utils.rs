@@ -7,17 +7,18 @@ lazy_static! {
     static ref OPTION: Selector = Selector::parse("option[selected]").unwrap();
 }
 
-struct Form<'a> {
+pub struct Form<'a> {
     root: ElementRef<'a>,
-    base_url: Url,
+    base_url: &'a Url,
 }
 
 impl<'a> Form<'a> {
-    fn new(base_url: Url, root: ElementRef<'a>) -> Self {
+    pub fn new(base_url: &'a Url, root: ElementRef<'a>) -> Self {
         Self { root, base_url }
     }
 
-    fn action(&self) -> Option<Url> {
+    /// Returns form action url with respect to its selected fields
+    pub fn action(&self) -> Option<Url> {
         if !self.root.value().name().eq_ignore_ascii_case("form") {
             return None;
         }
@@ -46,6 +47,19 @@ impl<'a> Form<'a> {
         }
         Some(url)
     }
+}
+
+pub fn url_set_query_param(url: &Url, name: &str, value: &str) -> Url {
+    let mut result = url.clone();
+    result.query_pairs_mut().clear().append_pair(name, value);
+    for (existing_key, existing_value) in url.query_pairs() {
+        if existing_key != name {
+            result
+                .query_pairs_mut()
+                .append_pair(existing_key.as_ref(), existing_value.as_ref());
+        }
+    }
+    result
 }
 
 #[cfg(test)]
@@ -77,9 +91,23 @@ mod tests {
             .select(&Selector::parse("form").unwrap())
             .next()
             .unwrap();
-        let form = Form::new(base_url.clone(), form);
+        let form = Form::new(&base_url, form);
 
         let url = form.action();
         assert_eq!(base_url.join("/form?a=1&b=3").ok(), url)
+    }
+
+    #[test]
+    fn check_url_set_query_param() {
+        let url = Url::parse("http://server.com?a=1").unwrap();
+
+        assert_eq!(
+            url_set_query_param(&url, "b", "2"),
+            Url::parse("http://server.com?b=2&a=1").unwrap()
+        );
+        assert_eq!(
+            url_set_query_param(&url, "a", "2"),
+            Url::parse("http://server.com?a=2").unwrap()
+        );
     }
 }
