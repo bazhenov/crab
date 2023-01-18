@@ -95,12 +95,20 @@ pub(crate) async fn run_crawler<T: Navigator>(
                             }
 
                             if opts.navigate {
-                                for link in T::next_pages(&page, &content)? {
-                                    let page_id =
-                                        storage.register_page(link, page.depth + 1).await?;
-                                    if page_id.is_some() {
-                                        state.new_links_found += 1;
+                                match T::next_pages(&page, &content) {
+                                    Ok(links) => {
+                                        for link in links {
+                                            let page_id =
+                                                storage.register_page(link, page.depth + 1).await?;
+                                            if page_id.is_some() {
+                                                state.new_links_found += 1;
+                                            }
+                                        }
                                     }
+                                    Err(e) => error!(
+                                        "next_pages() method failed on page #{}: {}",
+                                        page.id, e
+                                    ),
                                 }
                             }
                         } else if let Some(proxy) = proxy {
