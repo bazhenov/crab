@@ -118,7 +118,6 @@ pub(crate) async fn run_crawler<T: Navigator>(
                     Err(e) => {
                         debug!("Unable to download: {}", page.url);
                         trace!("{}", e);
-                        // storage.mark_page_as_failed(page.id).await?;
                         if let Some(proxy) = proxy {
                             proxies.proxy_failed(proxy);
                         }
