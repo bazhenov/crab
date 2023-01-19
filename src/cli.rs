@@ -97,19 +97,17 @@ where
                 let report = report.clone();
                 spawn_blocking(move || terminal::ui(report, tick_interval))
             };
-            let crawling_handle = run_crawler::<T>(storage, opts, (report.clone(), tick_interval));
+            let crawling_handle = run_crawler::<T>(storage, opts, (report, tick_interval));
 
             let mut crawler_handle = Box::pin(crawling_handle.fuse());
             let mut terminal_handle = Box::pin(terminal_handle.fuse());
 
             select! {
-                result = terminal_handle => {
-                    result??;
-                    // If terminal is finished first we do not want to wait on crawler
-                },
+                // If terminal is finished first we do not want to wait on crawler
+                result = terminal_handle => result??,
+                // If crawler is finished first we still need to wait on terminal
                 result = crawler_handle => {
                     result?;
-                    // If crawler is finished first we still need to wait on terminal
                     terminal_handle.await??;
                 },
             };
@@ -120,16 +118,10 @@ where
         }
 
         Commands::Navigate { page_id } => {
-            let content = storage
-                .read_page_content(page_id)
-                .await?
-                .ok_or(AppError::PageNotFound(page_id))?;
-            let page = storage
-                .read_page(page_id)
-                .await?
-                .ok_or(AppError::PageNotFound(page_id))?;
-            let links = T::next_pages(&page, &content)?;
-            for link in links {
+            let content = storage.read_page_content(page_id).await?;
+            let page = storage.read_page(page_id).await?;
+            let (page, content) = page.zip(content).ok_or(AppError::PageNotFound(page_id))?;
+            for link in T::next_pages(&page, &content)? {
                 println!("{}", link);
             }
         }
@@ -202,7 +194,7 @@ where
 }
 
 /// Returns a closure for a filtering on a key contains a string
-fn key_contains<T>(needles: &Vec<String>) -> impl Fn(&(String, T)) -> bool + '_ {
+fn key_contains<T>(needles: &[String]) -> impl Fn(&(String, T)) -> bool + '_ {
     move |(key, _): &(String, T)| {
         if needles.is_empty() {
             true

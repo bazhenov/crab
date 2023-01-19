@@ -5,6 +5,7 @@ use crab::{
 use futures::StreamExt;
 use refinery::config::{Config, ConfigDbType};
 use std::fs::File;
+use std::ops::Deref;
 use tempfile::{tempdir, TempDir};
 use tokio::test;
 use url::Url;
@@ -17,7 +18,7 @@ mod embedded {
 #[test]
 pub async fn count_number_of_pages_in_database() -> Result<()> {
     let storage = new_storage().await?;
-    assert_eq!(0, storage.as_ref().count_all_pages().await?);
+    assert_eq!(0, storage.count_all_pages().await?);
 
     Ok(())
 }
@@ -25,7 +26,6 @@ pub async fn count_number_of_pages_in_database() -> Result<()> {
 #[test]
 pub async fn write_and_read_pages_to_database() -> Result<()> {
     let storage = new_storage().await?;
-    let storage = storage.as_ref();
 
     let url = "http://test.com";
     let new_id = storage.register_page(url, 0).await?;
@@ -48,7 +48,6 @@ pub async fn write_and_read_pages_to_database() -> Result<()> {
 #[test]
 pub async fn read_downloaded_pages() -> Result<()> {
     let storage = new_storage().await?;
-    let storage = storage.as_ref();
 
     let url = "http://test.com";
     let expected_content = "<html>";
@@ -70,7 +69,6 @@ pub async fn read_downloaded_pages() -> Result<()> {
 #[test]
 pub async fn page_should_be_registered_only_once() -> Result<()> {
     let storage = new_storage().await?;
-    let storage = storage.as_ref();
 
     let page_id = storage.register_page("http://test.com", 0).await?;
     assert_eq!(page_id, Some(1));
@@ -84,7 +82,6 @@ pub async fn page_should_be_registered_only_once() -> Result<()> {
 #[test]
 pub async fn write_and_read_page_content() -> Result<()> {
     let storage = new_storage().await?;
-    let storage = storage.as_ref();
 
     let page_id = storage.register_page("http://test.com", 0).await?.unwrap();
 
@@ -102,8 +99,10 @@ pub async fn write_and_read_page_content() -> Result<()> {
 
 struct TempStorage(Storage, TempDir);
 
-impl AsRef<Storage> for TempStorage {
-    fn as_ref(&self) -> &Storage {
+impl Deref for TempStorage {
+    type Target = Storage;
+
+    fn deref(&self) -> &Self::Target {
         &self.0
     }
 }

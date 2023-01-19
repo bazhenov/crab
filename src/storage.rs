@@ -157,13 +157,13 @@ impl Storage {
 fn page_from_row(row: StdResult<SqliteRow, sqlx::Error>) -> Result<(Page, String)> {
     let row = row?;
 
-    let page_id = row.try_get::<i64, _>("id")?;
-    let url = row.try_get::<String, _>("url")?;
-    let depth = row.try_get::<u16, _>("depth")?;
-    let status = row.try_get::<u8, _>("status")?;
+    let page_id: i64 = row.try_get("id")?;
+    let url: String = row.try_get("url")?;
+    let depth: u16 = row.try_get("depth")?;
+    let status: u8 = row.try_get("status")?;
     let page = page_from_tuple((page_id, url, depth, status))?;
 
-    let content = row.try_get::<String, _>("content")?;
+    let content: String = row.try_get("content")?;
 
     Ok((page, content))
 }

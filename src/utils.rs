@@ -7,6 +7,7 @@ lazy_static! {
     static ref OPTION: Selector = Selector::parse("option[selected]").unwrap();
 }
 
+// Simple utility class to caulculate effecttive URL of the form
 pub struct Form<'a> {
     root: ElementRef<'a>,
     base_url: &'a Url,
