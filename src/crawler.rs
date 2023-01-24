@@ -29,7 +29,7 @@ pub(crate) struct CrawlerState {
 }
 
 pub(crate) async fn run_crawler<T: Navigator>(
-    storage: Storage,
+    mut storage: Storage,
     opts: RunCrawlerOpts,
     report: (Arc<Atom<Box<CrawlerState>>>, Duration),
 ) -> Result<()> {
@@ -93,7 +93,8 @@ pub(crate) async fn run_crawler<T: Navigator>(
                             storage.write_page_content(page.id, &content).await?;
 
                             if opts.navigate {
-                                navigate_page::<T>(&page, &content, &storage, &mut state).await?;
+                                navigate_page::<T>(&page, &content, &mut storage, &mut state)
+                                    .await?;
                             }
                         }
 
@@ -122,7 +123,7 @@ pub(crate) async fn run_crawler<T: Navigator>(
 async fn navigate_page<T: Navigator>(
     page: &Page,
     content: &str,
-    storage: &Storage,
+    storage: &mut Storage,
     state: &mut CrawlerState,
 ) -> Result<()> {
     match T::next_pages(page, content) {

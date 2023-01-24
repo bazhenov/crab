@@ -1,7 +1,6 @@
-use std::time::Duration;
-
 use crab::prelude::*;
 use reqwest::{Client, Proxy};
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<()> {

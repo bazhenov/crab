@@ -4,8 +4,8 @@ use crab::{
 };
 use futures::StreamExt;
 use refinery::config::{Config, ConfigDbType};
-use std::fs::File;
 use std::ops::Deref;
+use std::{fs::File, ops::DerefMut};
 use tempfile::{tempdir, TempDir};
 use tokio::test;
 use url::Url;
@@ -25,7 +25,7 @@ pub async fn count_number_of_pages_in_database() -> Result<()> {
 
 #[test]
 pub async fn write_and_read_pages_to_database() -> Result<()> {
-    let storage = new_storage().await?;
+    let mut storage = new_storage().await?;
 
     let url = "http://test.com";
     let new_id = storage.register_page(url, 0).await?;
@@ -47,7 +47,7 @@ pub async fn write_and_read_pages_to_database() -> Result<()> {
 
 #[test]
 pub async fn read_downloaded_pages() -> Result<()> {
-    let storage = new_storage().await?;
+    let mut storage = new_storage().await?;
 
     let url = "http://test.com";
     let expected_content = "<html>";
@@ -68,10 +68,13 @@ pub async fn read_downloaded_pages() -> Result<()> {
 
 #[test]
 pub async fn page_should_be_registered_only_once() -> Result<()> {
-    let storage = new_storage().await?;
+    let mut storage = new_storage().await?;
 
     let page_id = storage.register_page("http://test.com", 0).await?;
     assert_eq!(page_id, Some(1));
+
+    let page_id = storage.register_page("http://test.com", 0).await?;
+    assert_eq!(page_id, None);
 
     let page_id = storage.register_page("http://test.com", 0).await?;
     assert_eq!(page_id, None);
@@ -81,7 +84,7 @@ pub async fn page_should_be_registered_only_once() -> Result<()> {
 
 #[test]
 pub async fn write_and_read_page_content() -> Result<()> {
-    let storage = new_storage().await?;
+    let mut storage = new_storage().await?;
 
     let page_id = storage.register_page("http://test.com", 0).await?.unwrap();
 
@@ -104,6 +107,12 @@ impl Deref for TempStorage {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl DerefMut for TempStorage {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

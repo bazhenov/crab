@@ -87,7 +87,7 @@ where
 {
     env_logger::init();
     let opts = Opts::parse();
-    let storage = Storage::new(&opts.database).await?;
+    let mut storage = Storage::new(&opts.database).await?;
 
     match opts.command {
         Commands::RunCrawler(opts) => {
@@ -130,12 +130,15 @@ where
             // Need to buffer all found page links so iterating over downloaded pages doesn't
             // interfere with page registering process
             let mut links = vec![];
+
             let mut pages = storage.read_downloaded_pages();
             while let Some(row) = pages.next().await {
                 let (page, content) = row?;
                 let page_links = T::next_pages(&page, &content)?;
                 links.push((page.depth, page_links));
             }
+            drop(pages);
+
             for (page_depth, page_links) in links {
                 for link in page_links {
                     storage.register_page(link.as_str(), page_depth).await?;
