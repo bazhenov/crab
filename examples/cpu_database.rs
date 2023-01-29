@@ -32,35 +32,8 @@ impl Navigator for CpuDatabase {
     fn next_pages(page: &Page, content: &str) -> Result<Vec<Url>> {
         let document = Html::parse_document(content);
 
-        let mut links = vec![];
-        for f in document.select(&LINK_SELECTOR) {
-            if let Some(link) = f.value().attr("href") {
-                if link.starts_with("/cpu-specs/") {
-                    links.push(page.url.join(link)?);
-                }
-            }
-        }
-
-        if let Some(form) = document.select(&FORM).next() {
-            let fields = form.select(&FIELDS);
-            let form = Form::new(&page.url, form);
-            if let Some(form_url) = form.action() {
-                for select in fields {
-                    let field_name = select.value().attr("name").unwrap_or_default();
-                    if field_name.is_empty() || !ALLOWED_FILTERS.contains(&field_name) {
-                        continue;
-                    }
-                    for field_value in select.select(&FIELD_VALUE) {
-                        let field_value = field_value.value().attr("value").unwrap_or_default();
-                        if field_value.is_empty() {
-                            continue;
-                        }
-                        let url = url_set_query_param(&form_url, field_name, field_value);
-                        links.push(url);
-                    }
-                }
-            }
-        }
+        let mut links = read_cpu_links(&document, page)?;
+        links.extend(read_form_links(document, page));
 
         Ok(links)
     }
@@ -92,4 +65,41 @@ impl Navigator for CpuDatabase {
     fn validate(content: &str) -> bool {
         !content.contains("captcha")
     }
+}
+
+fn read_cpu_links(document: &Html, page: &Page) -> Result<Vec<Url>> {
+    let mut links = vec![];
+    for f in document.select(&LINK_SELECTOR) {
+        if let Some(link) = f.value().attr("href") {
+            if link.starts_with("/cpu-specs/") {
+                links.push(page.url.join(link)?);
+            }
+        }
+    }
+    Ok(links)
+}
+
+fn read_form_links(document: Html, page: &Page) -> Vec<Url> {
+    let mut links = vec![];
+    if let Some(form) = document.select(&FORM).next() {
+        let fields = form.select(&FIELDS);
+        let form = Form::new(&page.url, form);
+        if let Some(form_url) = form.action() {
+            for select in fields {
+                let field_name = select.value().attr("name").unwrap_or_default();
+                if field_name.is_empty() || !ALLOWED_FILTERS.contains(&field_name) {
+                    continue;
+                }
+                for field_value in select.select(&FIELD_VALUE) {
+                    let field_value = field_value.value().attr("value").unwrap_or_default();
+                    if field_value.is_empty() {
+                        continue;
+                    }
+                    let url = url_set_query_param(&form_url, field_name, field_value);
+                    links.push(url);
+                }
+            }
+        }
+    }
+    links
 }
