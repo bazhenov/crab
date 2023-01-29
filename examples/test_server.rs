@@ -48,8 +48,4 @@ impl Navigator for TestServer {
         }
         Ok(kv)
     }
-
-    fn validate(_content: &str) -> bool {
-        true
-    }
 }
