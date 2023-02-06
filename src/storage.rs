@@ -22,7 +22,6 @@ pub struct Storage {
 pub enum PageStatus {
     NotDownloaded = 1,
     Downloaded = 2,
-    Failed = 3,
 }
 
 impl fmt::Display for PageStatus {
@@ -30,7 +29,6 @@ impl fmt::Display for PageStatus {
         match self {
             PageStatus::NotDownloaded => write!(f, "NotDownloaded"),
             PageStatus::Downloaded => write!(f, "Downloaded"),
-            PageStatus::Failed => write!(f, "Failed"),
         }
     }
 }
