@@ -27,8 +27,9 @@ pub async fn count_number_of_pages_in_database() -> Result<()> {
 pub async fn write_and_read_pages_to_database() -> Result<()> {
     let mut storage = new_storage().await?;
 
+    let page_type = 1;
     let url = "http://test.com";
-    let new_id = storage.register_page(url, 0).await?;
+    let new_id = storage.register_page(url, page_type, 0).await?;
     assert_eq!(new_id, Some(1));
 
     let pages = storage.list_not_downloaded_pages(10).await?;
@@ -36,6 +37,7 @@ pub async fn write_and_read_pages_to_database() -> Result<()> {
     let expected_page = Page {
         id: new_id.unwrap(),
         url: Url::parse(url)?,
+        page_type,
         depth: 0,
         status: PageStatus::NotDownloaded,
     };
@@ -51,7 +53,7 @@ pub async fn read_downloaded_pages() -> Result<()> {
 
     let url = "http://test.com";
     let expected_content = "<html>";
-    let new_id = storage.register_page(url, 0).await?.unwrap();
+    let new_id = storage.register_page(url, 1, 0).await?.unwrap();
     storage.write_page_content(new_id, expected_content).await?;
 
     let mut pages = storage.read_downloaded_pages();
@@ -70,13 +72,13 @@ pub async fn read_downloaded_pages() -> Result<()> {
 pub async fn page_should_be_registered_only_once() -> Result<()> {
     let mut storage = new_storage().await?;
 
-    let page_id = storage.register_page("http://test.com", 0).await?;
+    let page_id = storage.register_page("http://test.com", 1, 0).await?;
     assert_eq!(page_id, Some(1));
 
-    let page_id = storage.register_page("http://test.com", 0).await?;
+    let page_id = storage.register_page("http://test.com", 1, 0).await?;
     assert_eq!(page_id, None);
 
-    let page_id = storage.register_page("http://test.com", 0).await?;
+    let page_id = storage.register_page("http://test.com", 1, 0).await?;
     assert_eq!(page_id, None);
 
     Ok(())
@@ -86,7 +88,10 @@ pub async fn page_should_be_registered_only_once() -> Result<()> {
 pub async fn write_and_read_page_content() -> Result<()> {
     let mut storage = new_storage().await?;
 
-    let page_id = storage.register_page("http://test.com", 0).await?.unwrap();
+    let page_id = storage
+        .register_page("http://test.com", 1, 0)
+        .await?
+        .unwrap();
 
     let expected_html = "<html />";
     storage.write_page_content(page_id, expected_html).await?;

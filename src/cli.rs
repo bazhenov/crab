@@ -43,7 +43,7 @@ enum Commands {
     RunCrawler(RunCrawlerOpts),
 
     /// add seed page to the database
-    AddSeed { seed: String },
+    AddSeed { seed: String, page_type: u8 },
 
     /// run navigation rules on a given page and print outgoing links
     Navigate { page_id: i64 },
@@ -113,15 +113,15 @@ where
             };
         }
 
-        Commands::AddSeed { seed } => {
-            storage.register_page(seed.as_str(), 0).await?;
+        Commands::AddSeed { seed, page_type } => {
+            storage.register_page(seed.as_str(), page_type, 0).await?;
         }
 
         Commands::Navigate { page_id } => {
             let content = storage.read_page_content(page_id).await?;
             let page = storage.read_page(page_id).await?;
             let (page, content) = page.zip(content).ok_or(AppError::PageNotFound(page_id))?;
-            for link in T::next_pages(&page, &content)? {
+            for (link, _) in T::next_pages(&page, &content)? {
                 println!("{}", link);
             }
         }
@@ -140,8 +140,10 @@ where
             drop(pages);
 
             for (page_depth, page_links) in links {
-                for link in page_links {
-                    storage.register_page(link.as_str(), page_depth).await?;
+                for (link, page_type) in page_links {
+                    storage
+                        .register_page(link.as_str(), page_type, page_depth)
+                        .await?;
                 }
             }
         }

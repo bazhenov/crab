@@ -36,7 +36,7 @@ pub mod prelude {
 /// Base type allowing user to provide parsing rules
 pub trait Navigator {
     /// Parse next pages referenced in the content
-    fn next_pages(page: &Page, content: &str) -> Result<Vec<Url>>;
+    fn next_pages(page: &Page, content: &str) -> Result<Vec<(Url, u8)>>;
 
     /// Returns parsed key-value pairs for the page]
     fn kv(content: &str) -> Result<HashMap<String, String>>;

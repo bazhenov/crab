@@ -128,8 +128,10 @@ async fn navigate_page<T: Navigator>(
 ) -> Result<()> {
     match T::next_pages(page, content) {
         Ok(links) => {
-            for link in links {
-                let page_id = storage.register_page(link, page.depth + 1).await?;
+            for (link, page_type) in links {
+                let page_id = storage
+                    .register_page(link, page_type, page.depth + 1)
+                    .await?;
                 if page_id.is_some() {
                     state.new_links_found += 1;
                 }
