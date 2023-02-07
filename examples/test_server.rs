@@ -10,8 +10,13 @@ async fn main() -> Result<()> {
 
 struct TestServer;
 
+enum PageType {
+    Listing = 1,
+    Data = 2,
+}
+
 impl Navigator for TestServer {
-    fn next_pages(page: &Page, content: &str) -> Result<Vec<Url>> {
+    fn next_pages(page: &Page, content: &str) -> Result<Vec<(Url, u8)>> {
         let document = Html::parse_document(content);
 
         let mut links = vec![];
@@ -20,14 +25,14 @@ impl Navigator for TestServer {
             Selector::parse("section.pager a").map_err(|_e| AppError::InvalidSelector)?;
         for f in document.select(&selector) {
             if let Some(link) = f.value().attr("href") {
-                links.push(page.url.join(link)?);
+                links.push((page.url.join(link)?, PageType::Listing as u8));
             }
         }
 
         let selector = Selector::parse("ul a").map_err(|_e| AppError::InvalidSelector)?;
         for f in document.select(&selector) {
             if let Some(link) = f.value().attr("href") {
-                links.push(page.url.join(link)?);
+                links.push((page.url.join(link)?, PageType::Data as u8));
             }
         }
         Ok(links)
