@@ -156,12 +156,13 @@ impl Storage {
         }
     }
 
-    pub async fn read_page_content(&self, id: i64) -> Result<Option<String>> {
-        let content: Option<(String,)> = sqlx::query_as("SELECT content FROM pages WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&self.connection)
-            .await?;
-        Ok(content.map(|r| r.0))
+    pub async fn read_page_content(&self, id: i64) -> Result<Option<(String, u8)>> {
+        let content: Option<(String, u8)> =
+            sqlx::query_as("SELECT content, type FROM pages WHERE id = ?")
+                .bind(id)
+                .fetch_optional(&self.connection)
+                .await?;
+        Ok(content)
     }
 
     /// Lists downloaded pages and its content

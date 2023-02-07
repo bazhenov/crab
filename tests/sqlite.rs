@@ -88,16 +88,22 @@ pub async fn page_should_be_registered_only_once() -> Result<()> {
 pub async fn write_and_read_page_content() -> Result<()> {
     let mut storage = new_storage().await?;
 
+    let expected_page_type = 1;
+    let expected_html = "<html />";
+
     let page_id = storage
-        .register_page("http://test.com", 1, 0)
+        .register_page("http://test.com", expected_page_type, 0)
         .await?
         .unwrap();
 
-    let expected_html = "<html />";
     storage.write_page_content(page_id, expected_html).await?;
 
-    let html = storage.read_page_content(page_id).await?;
-    assert_eq!(html, Some(expected_html.to_owned()));
+    let (html, page_type) = storage
+        .read_page_content(page_id)
+        .await?
+        .ok_or(AppError::PageNotFound(page_id))?;
+    assert_eq!(html, expected_html);
+    assert_eq!(page_type, expected_page_type);
 
     let page = storage.read_page(page_id).await?.unwrap();
     assert_eq!(page.status, PageStatus::Downloaded);

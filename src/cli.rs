@@ -1,5 +1,6 @@
 use crate::{
-    crawler::run_crawler, prelude::*, storage::Storage, table::Table, terminal, Navigator,
+    crawler::run_crawler, page_handler, prelude::*, storage::Storage, table::Table, terminal,
+    TargetPage,
 };
 use atom::Atom;
 use clap::Parser;
@@ -81,10 +82,7 @@ enum Commands {
     Reset { page_id: i64 },
 }
 
-pub async fn entrypoint<T>() -> Result<()>
-where
-    T: Navigator,
-{
+pub async fn entrypoint(handlers: Vec<Box<dyn TargetPage>>) -> Result<()> {
     env_logger::init();
     let opts = Opts::parse();
     let mut storage = Storage::new(&opts.database).await?;
@@ -97,7 +95,7 @@ where
                 let report = report.clone();
                 spawn_blocking(move || terminal::ui(report, tick_interval))
             };
-            let crawling_handle = run_crawler::<T>(storage, opts, (report, tick_interval));
+            let crawling_handle = run_crawler(handlers, storage, opts, (report, tick_interval));
 
             let mut crawler_handle = Box::pin(crawling_handle.fuse());
             let mut terminal_handle = Box::pin(terminal_handle.fuse());
@@ -120,8 +118,10 @@ where
         Commands::Navigate { page_id } => {
             let content = storage.read_page_content(page_id).await?;
             let page = storage.read_page(page_id).await?;
-            let (page, content) = page.zip(content).ok_or(AppError::PageNotFound(page_id))?;
-            for (link, _) in T::next_pages(&page, &content)? {
+            let (page, (content, _)) = page.zip(content).ok_or(AppError::PageNotFound(page_id))?;
+            let handler = page_handler(&handlers, page.page_type)
+                .ok_or(AppError::PageHandlerNotFound(page.page_type))?;
+            for (link, _) in handler.next_pages(&page, &content)?.unwrap_or_default() {
                 println!("{}", link);
             }
         }
@@ -134,13 +134,15 @@ where
             let mut pages = storage.read_downloaded_pages();
             while let Some(row) = pages.next().await {
                 let (page, content) = row?;
-                let page_links = T::next_pages(&page, &content)?;
+                let handler = page_handler(&handlers, page.page_type)
+                    .ok_or(AppError::PageHandlerNotFound(page.page_type))?;
+                let page_links = handler.next_pages(&page, &content)?;
                 links.push((page.depth, page_links));
             }
             drop(pages);
 
             for (page_depth, page_links) in links {
-                for (link, page_type) in page_links {
+                for (link, page_type) in page_links.unwrap_or_default() {
                     storage
                         .register_page(link.as_str(), page_type, page_depth)
                         .await?;
@@ -149,11 +151,13 @@ where
         }
 
         Commands::Kv { name, page_id } => {
-            let content = storage
+            let (content, page_type) = storage
                 .read_page_content(page_id)
                 .await?
                 .ok_or(AppError::PageNotFound(page_id))?;
-            let kv = T::kv(&content)?;
+            let handler = page_handler(&handlers, page_type)
+                .ok_or(AppError::PageHandlerNotFound(page_type))?;
+            let kv = handler.kv(&content)?.unwrap_or_default();
             for (key, value) in kv.into_iter().filter(key_contains(&name)) {
                 println!("{}: {}", &key, &value)
             }
@@ -164,8 +168,14 @@ where
             let mut pages = storage.read_downloaded_pages();
 
             while let Some(row) = pages.next().await {
-                let (_, content) = row?;
-                let kv = T::kv(&content)?.into_iter().filter(key_contains(&name));
+                let (page, content) = row?;
+                let handler = page_handler(&handlers, page.page_type)
+                    .ok_or(AppError::PageHandlerNotFound(page.page_type))?;
+                let kv = handler
+                    .kv(&content)?
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(key_contains(&name));
                 table.add_row(kv);
             }
             table.write(&mut stdout())?;
@@ -181,7 +191,10 @@ where
             let mut pages = storage.read_downloaded_pages();
             while let Some(row) = pages.next().await {
                 let (page, content) = row?;
-                if !T::validate(&content) {
+                let handler = page_handler(&handlers, page.page_type)
+                    .ok_or(AppError::PageHandlerNotFound(page.page_type))?;
+
+                if !handler.validate(&content) {
                     println!("{}\t{}", page.id, page.url);
                     if reset {
                         storage.reset_page(page.id).await?;
@@ -191,7 +204,7 @@ where
         }
 
         Commands::Dump { page_id } => {
-            let content = storage
+            let (content, _) = storage
                 .read_page_content(page_id)
                 .await?
                 .ok_or(AppError::PageNotFound(page_id))?;
