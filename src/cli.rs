@@ -121,8 +121,8 @@ pub async fn entrypoint(handlers: Vec<Box<dyn TargetPage>>) -> Result<()> {
             let (page, (content, _)) = page.zip(content).ok_or(AppError::PageNotFound(page_id))?;
             let handler = page_handler(&handlers, page.page_type)
                 .ok_or(AppError::PageHandlerNotFound(page.page_type))?;
-            for (link, _) in handler.next_pages(&page, &content)?.unwrap_or_default() {
-                println!("{}", link);
+            for (link, page_type) in handler.next_pages(&page, &content)?.unwrap_or_default() {
+                println!("{:3}  {}", page_type, link);
             }
         }
 
