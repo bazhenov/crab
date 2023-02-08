@@ -64,7 +64,7 @@ impl PageParsers {
         parser.next_pages(page, content)
     }
 
-    /// Returns parsed key-value pairs for the page]
+    /// Returns parsed key-value pairs for the page
     fn kv(&self, page_type: PageType, content: &str) -> Result<Option<HashMap<String, String>>> {
         let parser = page_parser(&self.0[..], page_type)?;
         parser.kv(content)
