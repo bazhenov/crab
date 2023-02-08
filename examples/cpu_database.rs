@@ -2,19 +2,18 @@ use crab::{
     entrypoint,
     prelude::*,
     utils::{url_set_query_param, Form},
-    Navigator, Page,
+    Page, TargetPage,
 };
 use lazy_static::lazy_static;
+use regex::Regex;
 use scraper::{Html, Selector};
 use std::collections::HashMap;
 use url::Url;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    entrypoint::<CpuDatabase>().await
+    entrypoint(vec![Box::new(ListingPage), Box::new(CpuPage)]).await
 }
-
-struct CpuDatabase;
 
 lazy_static! {
     static ref TD_SELECTOR: Selector = Selector::parse("td").unwrap();
@@ -26,26 +25,59 @@ lazy_static! {
     static ref FIELDS: Selector = Selector::parse("select").unwrap();
     static ref FIELD_VALUE: Selector = Selector::parse("option[value]:not([value=''])").unwrap();
     static ref ALLOWED_FILTERS: Vec<&'static str> = vec!["mfgr", "released"];
+    static ref CPU_PAGE_LINK: Regex = Regex::new(r"^/cpu-specs/[^?]+\.c[0-9]+$").unwrap();
+    static ref CPU_LISTING_LINK: Regex = Regex::new(r"^/cpu-specs/\?.+$").unwrap();
 }
 
-impl Navigator for CpuDatabase {
-    fn next_pages(page: &Page, content: &str) -> Result<Vec<Url>> {
+struct ListingPage;
+
+impl ListingPage {
+    const TYPE: u8 = 1;
+}
+
+impl TargetPage for ListingPage {
+    fn next_pages(&self, page: &Page, content: &str) -> Result<Option<Vec<(Url, u8)>>> {
         let document = Html::parse_document(content);
 
-        let mut links = read_cpu_links(&document, page)?;
+        let mut links = read_links(&document, page)?;
         links.extend(read_form_links(document, page));
 
-        Ok(links)
+        Ok(Some(links))
     }
 
-    fn kv(content: &str) -> Result<HashMap<String, String>> {
+    fn kv(&self, _: &str) -> Result<Option<HashMap<String, String>>> {
+        Ok(None)
+    }
+
+    fn validate(&self, content: &str) -> bool {
+        validate_page(content)
+    }
+
+    fn page_type(&self) -> u8 {
+        Self::TYPE
+    }
+}
+
+struct CpuPage;
+
+impl CpuPage {
+    const TYPE: u8 = 2;
+}
+
+impl TargetPage for CpuPage {
+    fn next_pages(&self, page: &Page, content: &str) -> Result<Option<Vec<(Url, u8)>>> {
+        let document = Html::parse_document(content);
+        Ok(Some(read_links(&document, page)?))
+    }
+
+    fn kv(&self, content: &str) -> Result<Option<HashMap<String, String>>> {
         let document = Html::parse_document(content);
         let mut kv = HashMap::new();
 
         if let Some(name) = document.select(&NAME_SELECTOR).next() {
             kv.insert("name".to_owned(), name.inner_html());
         } else {
-            return Ok(kv);
+            return Ok(Some(kv));
         }
         for f in document.select(&ROW_SELECTOR) {
             let th = f.select(&TH_SELECTOR).next();
@@ -59,27 +91,40 @@ impl Navigator for CpuDatabase {
                 kv.insert(key.to_owned(), value.to_owned());
             }
         }
-        Ok(kv)
+        Ok(Some(kv))
     }
 
-    fn validate(content: &str) -> bool {
-        !content.contains("captcha")
+    fn page_type(&self) -> u8 {
+        Self::TYPE
+    }
+
+    fn validate(&self, content: &str) -> bool {
+        validate_page(content)
     }
 }
 
-fn read_cpu_links(document: &Html, page: &Page) -> Result<Vec<Url>> {
+fn validate_page(content: &str) -> bool {
+    !content.contains("captcha")
+}
+
+fn read_links(document: &Html, page: &Page) -> Result<Vec<(Url, u8)>> {
     let mut links = vec![];
     for f in document.select(&LINK_SELECTOR) {
         if let Some(link) = f.value().attr("href") {
-            if link.starts_with("/cpu-specs/") {
-                links.push(page.url.join(link)?);
-            }
+            let page_type = if CPU_PAGE_LINK.is_match(&link) {
+                CpuPage::TYPE
+            } else if CPU_LISTING_LINK.is_match(&link) {
+                ListingPage::TYPE
+            } else {
+                continue;
+            };
+            links.push((page.url.join(link)?, page_type));
         }
     }
     Ok(links)
 }
 
-fn read_form_links(document: Html, page: &Page) -> Vec<Url> {
+fn read_form_links(document: Html, page: &Page) -> Vec<(Url, u8)> {
     let mut links = vec![];
     if let Some(form) = document.select(&FORM).next() {
         let fields = form.select(&FIELDS);
@@ -96,7 +141,7 @@ fn read_form_links(document: Html, page: &Page) -> Vec<Url> {
                         continue;
                     }
                     let url = url_set_query_param(&form_url, field_name, field_value);
-                    links.push(url);
+                    links.push((url, ListingPage::TYPE));
                 }
             }
         }
