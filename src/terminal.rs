@@ -6,6 +6,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::{
+    fmt::Display,
     io,
     sync::{atomic::Ordering, Arc},
     time::{Duration, Instant},
@@ -21,7 +22,7 @@ use tui::{
 /// Encodes which information main panel is showing
 #[derive(Copy, Clone)]
 enum MainPanelMode {
-    OngoingRequests,
+    InFlightRequests,
     Proxies,
 }
 
@@ -59,7 +60,7 @@ fn run_terminal<B: Backend>(
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
     let mut current_state = None;
-    let mut main_panel_mode = MainPanelMode::OngoingRequests;
+    let mut main_panel_mode = MainPanelMode::InFlightRequests;
     loop {
         current_state = state.take(Ordering::Relaxed).or(current_state);
 
@@ -74,7 +75,7 @@ fn run_terminal<B: Backend>(
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('p') => main_panel_mode = MainPanelMode::Proxies,
-                    KeyCode::Char('r') => main_panel_mode = MainPanelMode::OngoingRequests,
+                    KeyCode::Char('r') => main_panel_mode = MainPanelMode::InFlightRequests,
                     KeyCode::Char('q') => return Ok(()),
                     _ => {}
                 }
@@ -86,21 +87,19 @@ fn run_terminal<B: Backend>(
     }
 }
 
+fn metric<T: Display>(name: &'static str, value: T) -> ListItem<'static> {
+    ListItem::new(format!("{}: {}", name, value))
+}
+
 fn draw_widgets(f: &mut Frame<impl Backend>, state: &CrawlerState, main_panel_mode: MainPanelMode) {
     let metrics = List::new([
-        ListItem::new(format!("Number of requests: {}", state.requests)),
-        ListItem::new(format!(
-            "Number of requests in flight: {}",
-            state.requests_in_flight.len()
-        )),
-        ListItem::new(format!(
-            "Number of successfull requests: {}",
-            state.successfull_requests
-        )),
-        ListItem::new(format!(
-            "Number of new links found: {}",
-            state.new_links_found
-        )),
+        metric("Number of requests", state.requests),
+        metric(
+            "Number of requests in flight",
+            state.requests_in_flight.len(),
+        ),
+        metric("Number of successfull requests", state.successfull_requests),
+        metric("Number of new links found", state.new_links_found),
     ])
     .block(create_block("Metrics"));
 
@@ -115,7 +114,7 @@ fn draw_widgets(f: &mut Frame<impl Backend>, state: &CrawlerState, main_panel_mo
     f.render_widget(metrics, metrics_panel);
 
     match main_panel_mode {
-        MainPanelMode::OngoingRequests => {
+        MainPanelMode::InFlightRequests => {
             let requests = state
                 .requests_in_flight
                 .iter()
