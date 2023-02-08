@@ -24,9 +24,6 @@ pub mod prelude {
 
     #[derive(Debug, thiserror::Error)]
     pub enum AppError {
-        #[error("Invalid Selector")]
-        InvalidSelector,
-
         #[error("Page #{} not found", .0)]
         PageNotFound(i64),
 
