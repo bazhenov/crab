@@ -13,9 +13,17 @@ use std::{
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
-    widgets::{Block, Borders, List, ListItem},
+    style::{Color, Style},
+    widgets::{Block, Borders, List, ListItem, Row, Table},
     Frame, Terminal,
 };
+
+/// Encodes which information main panel is showing
+#[derive(Copy, Clone)]
+enum MainPanelMode {
+    OngoingRequests,
+    Proxies,
+}
 
 pub(crate) fn ui(state: Arc<Atom<Box<CrawlerState>>>, tick_rate: Duration) -> Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
@@ -51,11 +59,12 @@ fn run_terminal<B: Backend>(
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
     let mut current_state = None;
+    let mut main_panel_mode = MainPanelMode::OngoingRequests;
     loop {
         current_state = state.take(Ordering::Relaxed).or(current_state);
 
         if let Some(state) = &current_state {
-            terminal.draw(|f| draw_widgets(f, state))?;
+            terminal.draw(|f| draw_widgets(f, state, main_panel_mode))?;
         }
 
         let timeout = tick_duration
@@ -63,8 +72,11 @@ fn run_terminal<B: Backend>(
             .unwrap_or(Duration::from_secs(0));
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                if let KeyCode::Char('q') = key.code {
-                    return Ok(());
+                match key.code {
+                    KeyCode::Char('p') => main_panel_mode = MainPanelMode::Proxies,
+                    KeyCode::Char('r') => main_panel_mode = MainPanelMode::OngoingRequests,
+                    KeyCode::Char('q') => return Ok(()),
+                    _ => {}
                 }
             }
         }
@@ -74,7 +86,7 @@ fn run_terminal<B: Backend>(
     }
 }
 
-fn draw_widgets(f: &mut Frame<impl Backend>, state: &CrawlerState) {
+fn draw_widgets(f: &mut Frame<impl Backend>, state: &CrawlerState, main_panel_mode: MainPanelMode) {
     let metrics = List::new([
         ListItem::new(format!("Number of requests: {}", state.requests)),
         ListItem::new(format!(
@@ -90,25 +102,54 @@ fn draw_widgets(f: &mut Frame<impl Backend>, state: &CrawlerState) {
             state.new_links_found
         )),
     ])
-    .block(Block::default().borders(Borders::ALL).title("Metrics"));
-
-    let requests = state
-        .requests_in_flight
-        .iter()
-        .map(|r| r.url.to_string())
-        .map(ListItem::new)
-        .collect::<Vec<_>>();
-    let requests = List::new(requests).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Requests in flight"),
-    );
+    .block(create_block("Metrics"));
 
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Max(6), Constraint::Percentage(50)].as_ref())
+        .margin(1)
         .split(f.size());
+    let metrics_panel = layout[0];
+    let main_panel = layout[1];
 
-    f.render_widget(metrics, layout[0]);
-    f.render_widget(requests, layout[1]);
+    f.render_widget(metrics, metrics_panel);
+
+    match main_panel_mode {
+        MainPanelMode::OngoingRequests => {
+            let requests = state
+                .requests_in_flight
+                .iter()
+                .map(|r| r.url.to_string())
+                .map(ListItem::new)
+                .collect::<Vec<_>>();
+            let list = List::new(requests).block(create_block("Requests in flight"));
+            f.render_widget(list, main_panel);
+        }
+        MainPanelMode::Proxies => {
+            let proxies = state
+                .proxies
+                .iter()
+                .map(|(proxy, stat)| {
+                    Row::new(vec![
+                        format!("{:>5}", stat.requests.to_string()),
+                        format!("{:>5}", stat.successfull_requests.to_string()),
+                        format!("{:?}", proxy),
+                    ])
+                })
+                .collect::<Vec<_>>();
+
+            let header = Row::new(vec!["Requests", "Successfull", "Proxy"])
+                .style(Style::default().fg(Color::Yellow));
+            let table = Table::new(proxies).header(header).widths(&[
+                Constraint::Length(5),
+                Constraint::Length(5),
+                Constraint::Percentage(80),
+            ]);
+            f.render_widget(table, main_panel);
+        }
+    };
+}
+
+fn create_block(title: &str) -> Block {
+    Block::default().borders(Borders::ALL).title(title)
 }

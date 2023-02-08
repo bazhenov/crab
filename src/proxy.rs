@@ -18,18 +18,29 @@ pub type ProxyId = usize;
 /// or decremented (in case of failure). Dead proxy is defined as a proxy with undersaturated counter (`-2`).
 #[derive(Default)]
 pub struct Proxies {
-    proxies: Vec<(Proxy, AliveCounter)>,
+    proxies: Vec<(Proxy, ProxyStat)>,
     rng: ThreadRng,
 }
 
+#[derive(Default, Clone)]
+pub(crate) struct ProxyStat {
+    /// Number of requests attempted via proxy
+    pub(crate) requests: u32,
+
+    /// Number of requests executed successfully via proxy
+    pub(crate) successfull_requests: u32,
+
+    alive_counter: AliveCounter,
+}
+
 impl Proxies {
-    pub fn from_file(proxy_list: impl AsRef<Path>) -> Result<Self> {
+    pub(crate) fn from_file(proxy_list: impl AsRef<Path>) -> Result<Self> {
         let file = BufReader::new(File::open(proxy_list.as_ref())?);
         let mut proxies = vec![];
         for line in file.lines() {
             let line = line?.trim().to_owned();
             if !line.is_empty() {
-                proxies.push((Proxy::all(line)?, AliveCounter::default()));
+                proxies.push((Proxy::all(line)?, ProxyStat::default()));
             }
         }
         let rng = thread_rng();
@@ -37,20 +48,27 @@ impl Proxies {
     }
 
     /// Called when proxy failed to process a request
-    pub fn proxy_failed(&mut self, proxy_id: ProxyId) {
-        if let Some((proxy, alive_counter)) = self.proxies.get_mut(proxy_id) {
-            *alive_counter -= 1;
-            if alive_counter.state() == CounterState::SaturatedDown {
+    pub(crate) fn proxy_failed(&mut self, proxy_id: ProxyId) {
+        if let Some((proxy, stat)) = self.proxies.get_mut(proxy_id) {
+            stat.requests += 1;
+            stat.alive_counter -= 1;
+            if stat.alive_counter.state() == CounterState::SaturatedDown {
                 info!("Proxy found dead: {:?}", proxy);
             }
         }
     }
 
     /// Called when proxy successfully process a request
-    pub fn proxy_succeseed(&mut self, proxy_id: ProxyId) {
-        if let Some((_, alive_counter)) = self.proxies.get_mut(proxy_id) {
-            *alive_counter += 1;
+    pub(crate) fn proxy_succeseed(&mut self, proxy_id: ProxyId) {
+        if let Some((_, stat)) = self.proxies.get_mut(proxy_id) {
+            stat.requests += 1;
+            stat.successfull_requests += 1;
+            stat.alive_counter += 1;
         }
+    }
+
+    pub(crate) fn stat(&self) -> Vec<(Proxy, ProxyStat)> {
+        self.proxies.clone()
     }
 }
 
@@ -66,7 +84,7 @@ impl Iterator for Proxies {
             .proxies
             .iter()
             .enumerate()
-            .filter(|(_, (_, counter))| counter.state() != CounterState::SaturatedDown)
+            .filter(|(_, (_, stat))| stat.alive_counter.state() != CounterState::SaturatedDown)
             .map(|(id, (proxy, _))| (id, proxy))
             .collect::<Vec<_>>();
 
@@ -91,7 +109,7 @@ impl Iterator for Proxies {
 }
 
 // Saturated i8 between MIN and MAX
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct SaturatedI8<const MIN: i8, const MAX: i8>(i8);
 
 #[derive(Debug, PartialEq)]

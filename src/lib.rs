@@ -88,5 +88,5 @@ fn page_parser(handlers: &[Box<dyn PageParser>], page_type: PageType) -> Result<
         .iter()
         .find(|h| h.page_type() == page_type)
         .map(Box::as_ref)
-        .ok_or(AppError::PageHandlerNotFound(page_type).into())
+        .ok_or_else(|| AppError::PageHandlerNotFound(page_type).into())
 }

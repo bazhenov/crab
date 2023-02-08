@@ -1,7 +1,7 @@
 use crate::{
     cli::RunCrawlerOpts,
     prelude::*,
-    proxy::Proxies,
+    proxy::{Proxies, ProxyStat},
     storage::{Page, Storage},
     PageParsers,
 };
@@ -26,6 +26,8 @@ pub(crate) struct CrawlerState {
     pub(crate) new_links_found: u32,
     /// The set of ongoing requests
     pub(crate) requests_in_flight: HashSet<Page>,
+
+    pub(crate) proxies: Vec<(Proxy, ProxyStat)>,
 }
 
 pub(crate) async fn run_crawler(
@@ -51,7 +53,9 @@ pub(crate) async fn run_crawler(
     loop {
         // REPORTING PHASE
         if last_report_time.elapsed() >= report_tick {
-            report.swap(Box::new(state.clone()), Ordering::Relaxed);
+            let mut state = state.clone();
+            state.proxies = proxies.stat();
+            report.swap(Box::new(state), Ordering::Relaxed);
             last_report_time = Instant::now();
         }
 
