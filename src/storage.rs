@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{prelude::*, PageType};
 use futures::{stream::BoxStream, StreamExt};
 use int_enum::IntEnum;
 use sqlx::{
@@ -37,7 +37,7 @@ impl fmt::Display for PageStatus {
 pub struct Page {
     pub id: i64,
     pub url: Url,
-    pub page_type: u8,
+    pub page_type: PageType,
     pub depth: u16,
     pub status: PageStatus,
 }
@@ -52,7 +52,7 @@ impl fmt::Display for Page {
     }
 }
 
-type PageRow = (i64, String, u8, u16, u8);
+type PageRow = (i64, String, PageType, u16, u8);
 
 impl Storage {
     pub async fn new(url: &str) -> Result<Self> {
@@ -87,7 +87,7 @@ impl Storage {
     pub async fn register_page<U: TryInto<Url>>(
         &mut self,
         url: U,
-        page_type: u8,
+        page_type: PageType,
         depth: u16,
     ) -> Result<Option<i64>>
     where
@@ -156,8 +156,8 @@ impl Storage {
         }
     }
 
-    pub async fn read_page_content(&self, id: i64) -> Result<Option<(String, u8)>> {
-        let content: Option<(String, u8)> =
+    pub async fn read_page_content(&self, id: i64) -> Result<Option<(String, PageType)>> {
+        let content: Option<(String, PageType)> =
             sqlx::query_as("SELECT content, type FROM pages WHERE id = ?")
                 .bind(id)
                 .fetch_optional(&self.connection)
@@ -182,7 +182,7 @@ fn page_from_row(row: StdResult<SqliteRow, sqlx::Error>) -> Result<(Page, String
     let page_id: i64 = row.try_get("id")?;
     let url: String = row.try_get("url")?;
     let depth: u16 = row.try_get("depth")?;
-    let page_type: u8 = row.try_get("type")?;
+    let page_type: PageType = row.try_get("type")?;
     let status: u8 = row.try_get("status")?;
     let page = page_from_tuple((page_id, url, page_type, depth, status))?;
 
@@ -195,7 +195,7 @@ fn page_from_row(row: StdResult<SqliteRow, sqlx::Error>) -> Result<(Page, String
 ///
 /// - page_id - i64
 /// - url - String
-/// - page_type - u8
+/// - page_type - PageType
 /// - depth - u16
 /// - status - u8
 fn page_from_tuple(row: PageRow) -> Result<Page> {

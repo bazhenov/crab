@@ -1,6 +1,6 @@
 use crate::{
-    crawler::run_crawler, page_handler, prelude::*, storage::Storage, table::Table, terminal,
-    TargetPage,
+    crawler::run_crawler, prelude::*, storage::Storage, table::Table, terminal, PageParser,
+    PageParsers, PageType,
 };
 use atom::Atom;
 use clap::Parser;
@@ -44,7 +44,7 @@ enum Commands {
     RunCrawler(RunCrawlerOpts),
 
     /// add seed page to the database
-    AddSeed { seed: String, page_type: u8 },
+    AddSeed { seed: String, page_type: PageType },
 
     /// run navigation rules on a given page and print outgoing links
     Navigate { page_id: i64 },
@@ -82,10 +82,11 @@ enum Commands {
     Reset { page_id: i64 },
 }
 
-pub async fn entrypoint(handlers: Vec<Box<dyn TargetPage>>) -> Result<()> {
+pub async fn entrypoint(parsers: Vec<Box<dyn PageParser>>) -> Result<()> {
     env_logger::init();
     let opts = Opts::parse();
     let mut storage = Storage::new(&opts.database).await?;
+    let parsers = PageParsers(parsers);
 
     match opts.command {
         Commands::RunCrawler(opts) => {
@@ -95,7 +96,7 @@ pub async fn entrypoint(handlers: Vec<Box<dyn TargetPage>>) -> Result<()> {
                 let report = report.clone();
                 spawn_blocking(move || terminal::ui(report, tick_interval))
             };
-            let crawling_handle = run_crawler(handlers, storage, opts, (report, tick_interval));
+            let crawling_handle = run_crawler(parsers, storage, opts, (report, tick_interval));
 
             let mut crawler_handle = Box::pin(crawling_handle.fuse());
             let mut terminal_handle = Box::pin(terminal_handle.fuse());
@@ -119,9 +120,7 @@ pub async fn entrypoint(handlers: Vec<Box<dyn TargetPage>>) -> Result<()> {
             let content = storage.read_page_content(page_id).await?;
             let page = storage.read_page(page_id).await?;
             let (page, (content, _)) = page.zip(content).ok_or(AppError::PageNotFound(page_id))?;
-            let handler = page_handler(&handlers, page.page_type)
-                .ok_or(AppError::PageHandlerNotFound(page.page_type))?;
-            for (link, page_type) in handler.next_pages(&page, &content)?.unwrap_or_default() {
+            for (link, page_type) in parsers.next_pages(&page, &content)?.unwrap_or_default() {
                 println!("{:3}  {}", page_type, link);
             }
         }
@@ -134,9 +133,7 @@ pub async fn entrypoint(handlers: Vec<Box<dyn TargetPage>>) -> Result<()> {
             let mut pages = storage.read_downloaded_pages();
             while let Some(row) = pages.next().await {
                 let (page, content) = row?;
-                let handler = page_handler(&handlers, page.page_type)
-                    .ok_or(AppError::PageHandlerNotFound(page.page_type))?;
-                let page_links = handler.next_pages(&page, &content)?;
+                let page_links = parsers.next_pages(&page, &content)?;
                 links.push((page.depth, page_links));
             }
             drop(pages);
@@ -155,9 +152,7 @@ pub async fn entrypoint(handlers: Vec<Box<dyn TargetPage>>) -> Result<()> {
                 .read_page_content(page_id)
                 .await?
                 .ok_or(AppError::PageNotFound(page_id))?;
-            let handler = page_handler(&handlers, page_type)
-                .ok_or(AppError::PageHandlerNotFound(page_type))?;
-            let kv = handler.kv(&content)?.unwrap_or_default();
+            let kv = parsers.kv(page_type, &content)?.unwrap_or_default();
             for (key, value) in kv.into_iter().filter(key_contains(&name)) {
                 println!("{}: {}", &key, &value)
             }
@@ -169,10 +164,8 @@ pub async fn entrypoint(handlers: Vec<Box<dyn TargetPage>>) -> Result<()> {
 
             while let Some(row) = pages.next().await {
                 let (page, content) = row?;
-                let handler = page_handler(&handlers, page.page_type)
-                    .ok_or(AppError::PageHandlerNotFound(page.page_type))?;
-                let kv = handler
-                    .kv(&content)?
+                let kv = parsers
+                    .kv(page.page_type, &content)?
                     .unwrap_or_default()
                     .into_iter()
                     .filter(key_contains(&name));
@@ -191,10 +184,7 @@ pub async fn entrypoint(handlers: Vec<Box<dyn TargetPage>>) -> Result<()> {
             let mut pages = storage.read_downloaded_pages();
             while let Some(row) = pages.next().await {
                 let (page, content) = row?;
-                let handler = page_handler(&handlers, page.page_type)
-                    .ok_or(AppError::PageHandlerNotFound(page.page_type))?;
-
-                if !handler.validate(&content) {
+                if !parsers.validate(page.page_type, &content)? {
                     println!("{}\t{}", page.id, page.url);
                     if reset {
                         storage.reset_page(page.id).await?;

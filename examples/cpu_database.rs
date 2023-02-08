@@ -2,7 +2,7 @@ use crab::{
     entrypoint,
     prelude::*,
     utils::{url_set_query_param, Form},
-    Page, TargetPage,
+    Page, PageParser, PageType,
 };
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -32,11 +32,11 @@ lazy_static! {
 struct ListingPage;
 
 impl ListingPage {
-    const TYPE: u8 = 1;
+    const TYPE: PageType = 1;
 }
 
-impl TargetPage for ListingPage {
-    fn next_pages(&self, page: &Page, content: &str) -> Result<Option<Vec<(Url, u8)>>> {
+impl PageParser for ListingPage {
+    fn next_pages(&self, page: &Page, content: &str) -> Result<Option<Vec<(Url, PageType)>>> {
         let document = Html::parse_document(content);
 
         let mut links = read_links(&document, page)?;
@@ -53,7 +53,7 @@ impl TargetPage for ListingPage {
         validate_page(content)
     }
 
-    fn page_type(&self) -> u8 {
+    fn page_type(&self) -> PageType {
         Self::TYPE
     }
 }
@@ -61,11 +61,11 @@ impl TargetPage for ListingPage {
 struct CpuPage;
 
 impl CpuPage {
-    const TYPE: u8 = 2;
+    const TYPE: PageType = 2;
 }
 
-impl TargetPage for CpuPage {
-    fn next_pages(&self, page: &Page, content: &str) -> Result<Option<Vec<(Url, u8)>>> {
+impl PageParser for CpuPage {
+    fn next_pages(&self, page: &Page, content: &str) -> Result<Option<Vec<(Url, PageType)>>> {
         let document = Html::parse_document(content);
         Ok(Some(read_links(&document, page)?))
     }
@@ -94,7 +94,7 @@ impl TargetPage for CpuPage {
         Ok(Some(kv))
     }
 
-    fn page_type(&self) -> u8 {
+    fn page_type(&self) -> PageType {
         Self::TYPE
     }
 
@@ -107,7 +107,7 @@ fn validate_page(content: &str) -> bool {
     !content.contains("captcha")
 }
 
-fn read_links(document: &Html, page: &Page) -> Result<Vec<(Url, u8)>> {
+fn read_links(document: &Html, page: &Page) -> Result<Vec<(Url, PageType)>> {
     let mut links = vec![];
     for f in document.select(&LINK_SELECTOR) {
         if let Some(link) = f.value().attr("href") {
@@ -124,7 +124,7 @@ fn read_links(document: &Html, page: &Page) -> Result<Vec<(Url, u8)>> {
     Ok(links)
 }
 
-fn read_form_links(document: Html, page: &Page) -> Vec<(Url, u8)> {
+fn read_form_links(document: Html, page: &Page) -> Vec<(Url, PageType)> {
     let mut links = vec![];
     if let Some(form) = document.select(&FORM).next() {
         let fields = form.select(&FIELDS);

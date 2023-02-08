@@ -20,6 +20,8 @@ pub mod prelude {
 
     pub use log::{debug, error, info, trace, warn};
 
+    use crate::PageType;
+
     #[derive(Debug, thiserror::Error)]
     pub enum AppError {
         #[error("Invalid Selector")]
@@ -32,14 +34,16 @@ pub mod prelude {
         UnableToOpenProxyList(PathBuf),
 
         #[error("Handler for page type {} not found", .0)]
-        PageHandlerNotFound(u8),
+        PageHandlerNotFound(PageType),
     }
 }
 
+pub type PageType = u8;
+
 /// Base type allowing user to provide parsing rules
-pub trait TargetPage {
+pub trait PageParser {
     /// Parse next pages referenced in the content
-    fn next_pages(&self, page: &Page, content: &str) -> Result<Option<Vec<(Url, u8)>>>;
+    fn next_pages(&self, page: &Page, content: &str) -> Result<Option<Vec<(Url, PageType)>>>;
 
     /// Returns parsed key-value pairs for the page]
     fn kv(&self, content: &str) -> Result<Option<HashMap<String, String>>>;
@@ -52,15 +56,37 @@ pub trait TargetPage {
         true
     }
 
-    fn page_type(&self) -> u8;
+    fn page_type(&self) -> PageType;
 }
 
-pub(crate) fn page_handler(
-    handlers: &[Box<dyn TargetPage>],
-    page_type: u8,
-) -> Option<&dyn TargetPage> {
+struct PageParsers(Vec<Box<dyn PageParser>>);
+
+impl PageParsers {
+    fn next_pages(&self, page: &Page, content: &str) -> Result<Option<Vec<(Url, PageType)>>> {
+        let parser = page_parser(&self.0[..], page.page_type)?;
+        parser.next_pages(page, content)
+    }
+
+    /// Returns parsed key-value pairs for the page]
+    fn kv(&self, page_type: PageType, content: &str) -> Result<Option<HashMap<String, String>>> {
+        let parser = page_parser(&self.0[..], page_type)?;
+        parser.kv(content)
+    }
+
+    /// Validates page content
+    ///
+    /// If page is not valid it's content will not be written to storage
+    /// and crawler will repeat request to the page
+    fn validate(&self, page_type: PageType, content: &str) -> Result<bool> {
+        let parser = page_parser(&self.0[..], page_type)?;
+        Ok(parser.validate(content))
+    }
+}
+
+fn page_parser(handlers: &[Box<dyn PageParser>], page_type: PageType) -> Result<&dyn PageParser> {
     handlers
         .iter()
         .find(|h| h.page_type() == page_type)
         .map(Box::as_ref)
+        .ok_or(AppError::PageHandlerNotFound(page_type).into())
 }

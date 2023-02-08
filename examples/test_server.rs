@@ -1,4 +1,4 @@
-use crab::{entrypoint, prelude::*, Page, TargetPage};
+use crab::{entrypoint, prelude::*, Page, PageParser, PageType};
 use lazy_static::lazy_static;
 use scraper::{Html, Selector};
 use std::collections::HashMap;
@@ -19,11 +19,11 @@ lazy_static! {
 struct ListingPage;
 
 impl ListingPage {
-    const TYPE: u8 = 1;
+    const TYPE: PageType = 1;
 }
 
-impl TargetPage for ListingPage {
-    fn next_pages(&self, page: &Page, content: &str) -> Result<Option<Vec<(Url, u8)>>> {
+impl PageParser for ListingPage {
+    fn next_pages(&self, page: &Page, content: &str) -> Result<Option<Vec<(Url, PageType)>>> {
         let document = Html::parse_document(content);
 
         let mut links = vec![];
@@ -46,7 +46,7 @@ impl TargetPage for ListingPage {
         Ok(None)
     }
 
-    fn page_type(&self) -> u8 {
+    fn page_type(&self) -> PageType {
         Self::TYPE
     }
 }
@@ -54,11 +54,11 @@ impl TargetPage for ListingPage {
 struct DataPage;
 
 impl DataPage {
-    const TYPE: u8 = 2;
+    const TYPE: PageType = 2;
 }
 
-impl TargetPage for DataPage {
-    fn next_pages(&self, _: &Page, _: &str) -> Result<Option<Vec<(Url, u8)>>> {
+impl PageParser for DataPage {
+    fn next_pages(&self, _: &Page, _: &str) -> Result<Option<Vec<(Url, PageType)>>> {
         Ok(None)
     }
 
@@ -76,7 +76,7 @@ impl TargetPage for DataPage {
         Ok(Some(kv))
     }
 
-    fn page_type(&self) -> u8 {
+    fn page_type(&self) -> PageType {
         Self::TYPE
     }
 }

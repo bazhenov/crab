@@ -1,10 +1,9 @@
 use crate::{
     cli::RunCrawlerOpts,
-    page_handler,
     prelude::*,
     proxy::Proxies,
     storage::{Page, Storage},
-    TargetPage,
+    PageParsers,
 };
 use anyhow::Context;
 use atom::Atom;
@@ -30,7 +29,7 @@ pub(crate) struct CrawlerState {
 }
 
 pub(crate) async fn run_crawler(
-    handlers: Vec<Box<dyn TargetPage>>,
+    handlers: PageParsers,
     mut storage: Storage,
     opts: RunCrawlerOpts,
     report: (Arc<Atom<Box<CrawlerState>>>, Duration),
@@ -89,14 +88,13 @@ pub(crate) async fn run_crawler(
 
                 let success = match response {
                     Ok(content) => {
-                        let handler = page_handler(&handlers, page.page_type).unwrap();
-                        let valid_page = handler.validate(&content);
+                        let valid_page = handlers.validate(page.page_type, &content)?;
                         if valid_page {
                             state.successfull_requests += 1;
                             storage.write_page_content(page.id, &content).await?;
 
                             if opts.navigate {
-                                navigate_page(handler, &page, &content, &mut storage, &mut state)
+                                navigate_page(&handlers, &page, &content, &mut storage, &mut state)
                                     .await?;
                             }
                         }
@@ -124,13 +122,13 @@ pub(crate) async fn run_crawler(
 }
 
 async fn navigate_page(
-    handler: &dyn TargetPage,
+    parsers: &PageParsers,
     page: &Page,
     content: &str,
     storage: &mut Storage,
     state: &mut CrawlerState,
 ) -> Result<()> {
-    match handler.next_pages(page, content) {
+    match parsers.next_pages(page, content) {
         Ok(Some(links)) => {
             for (link, page_type) in links {
                 let page_id = storage
