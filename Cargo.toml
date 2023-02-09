@@ -16,6 +16,7 @@ futures = "0.3.25"
 int-enum = "0.5.0"
 lazy_static = "1.4.0"
 log = "0.4.17"
+pyo3 = "0.18.1"
 rand = "0.8.5"
 regex = "1.7.1"
 reqwest = {version = "0.11.13", features = ["socks"]}
