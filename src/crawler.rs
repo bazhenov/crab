@@ -51,7 +51,7 @@ pub struct RunCrawlerOpts {
 }
 
 pub async fn run_crawler(
-    handlers: PageParsers,
+    parsers: PageParsers,
     mut storage: Storage,
     opts: RunCrawlerOpts,
     report: (Arc<Atom<Box<CrawlerState>>>, Duration),
@@ -112,13 +112,13 @@ pub async fn run_crawler(
 
                 let success = match response {
                     Ok(content) => {
-                        let valid_page = handlers.validate(page.page_type, &content)?;
+                        let valid_page = parsers.validate(page.type_id, &content)?;
                         if valid_page {
                             state.successfull_requests += 1;
                             storage.write_page_content(page.id, &content).await?;
 
                             if opts.navigate {
-                                navigate_page(&handlers, &page, &content, &mut storage, &mut state)
+                                navigate_page(&parsers, &page, &content, &mut storage, &mut state)
                                     .await?;
                             }
                         }
@@ -152,12 +152,10 @@ async fn navigate_page(
     storage: &mut Storage,
     state: &mut CrawlerState,
 ) -> Result<()> {
-    match parsers.next_pages(page, content) {
+    match parsers.navigate(page, content) {
         Ok(Some(links)) => {
-            for (link, page_type) in links {
-                let page_id = storage
-                    .register_page(link, page_type, page.depth + 1)
-                    .await?;
+            for (link, type_id) in links {
+                let page_id = storage.register_page(link, type_id, page.depth + 1).await?;
                 if page_id.is_some() {
                     state.new_links_found += 1;
                 }

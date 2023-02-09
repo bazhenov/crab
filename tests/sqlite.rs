@@ -27,9 +27,9 @@ pub async fn count_number_of_pages_in_database() -> Result<()> {
 pub async fn write_and_read_pages_to_database() -> Result<()> {
     let mut storage = new_storage().await?;
 
-    let page_type = 1;
+    let type_id = 1;
     let url = "http://test.com";
-    let new_id = storage.register_page(url, page_type, 0).await?;
+    let new_id = storage.register_page(url, type_id, 0).await?;
     assert_eq!(new_id, Some(1));
 
     let pages = storage.list_not_downloaded_pages(10).await?;
@@ -37,7 +37,7 @@ pub async fn write_and_read_pages_to_database() -> Result<()> {
     let expected_page = Page {
         id: new_id.unwrap(),
         url: Url::parse(url)?,
-        page_type,
+        type_id,
         depth: 0,
         status: PageStatus::NotDownloaded,
     };
@@ -88,22 +88,22 @@ pub async fn page_should_be_registered_only_once() -> Result<()> {
 pub async fn write_and_read_page_content() -> Result<()> {
     let mut storage = new_storage().await?;
 
-    let expected_page_type = 1;
+    let expected_type_id = 1;
     let expected_html = "<html />";
 
     let page_id = storage
-        .register_page("http://test.com", expected_page_type, 0)
+        .register_page("http://test.com", expected_type_id, 0)
         .await?
         .unwrap();
 
     storage.write_page_content(page_id, expected_html).await?;
 
-    let (html, page_type) = storage
+    let (html, type_id) = storage
         .read_page_content(page_id)
         .await?
         .ok_or(AppError::PageNotFound(page_id))?;
     assert_eq!(html, expected_html);
-    assert_eq!(page_type, expected_page_type);
+    assert_eq!(type_id, expected_type_id);
 
     let page = storage.read_page(page_id).await?.unwrap();
     assert_eq!(page.status, PageStatus::Downloaded);

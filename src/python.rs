@@ -1,21 +1,20 @@
-use crate::{prelude::*, Page, PageParser, PageType};
+use crate::{prelude::*, PageParser, PageTypeId, Pairs};
 use pyo3::{
     prelude::*,
     types::{PyDict, PyList, PyTuple},
+    PyErr,
 };
-use reqwest::Url;
 use std::collections::HashMap;
 
 pub struct PythonPageParser {
-    page_type: PageType,
+    type_id: PageTypeId,
     navigate_func: Option<PyObject>,
     parse_func: Option<PyObject>,
     validate_func: Option<PyObject>,
 }
 
 impl PythonPageParser {
-    pub fn new(module_name: &str, page_type: PageType) -> Result<Self> {
-        prepare();
+    pub fn new(module_name: &str, type_id: PageTypeId) -> Result<Self> {
         Python::with_gil(|py| {
             let module = PyModule::import(py, module_name)?;
             let navigate_func = module.getattr("navigate").map(Into::into).ok();
@@ -25,57 +24,50 @@ impl PythonPageParser {
                 navigate_func,
                 parse_func,
                 validate_func,
-                page_type,
+                type_id,
             })
         })
     }
 }
 
 impl PageParser for PythonPageParser {
-    fn next_pages(
-        &self,
-        page: &crate::Page,
-        content: &str,
-    ) -> Result<Option<Vec<(reqwest::Url, crate::PageType)>>> {
+    fn navigate(&self, content: &str) -> Result<Option<Vec<(String, crate::PageTypeId)>>> {
         if let Some(navigate) = &self.navigate_func {
             let list = Python::with_gil(|py| {
                 let args = PyTuple::new(py, [content]);
                 let result = navigate.call1(py, args)?;
                 let mut urls = vec![];
-                for url in result.downcast::<PyList>(py)? {
-                    let page_type = url.get_item(1)?.extract::<u8>()?;
-                    let url = url.get_item(0)?.extract::<String>()?;
-                    urls.push((url, page_type));
+                for tuple in result.downcast::<PyList>(py)? {
+                    let url = tuple.get_item(0)?.extract::<String>()?;
+                    let type_id = tuple.get_item(1)?.extract::<u8>()?;
+                    urls.push((url, type_id));
                 }
-                Ok::<_, pyo3::PyErr>(urls)
+                Ok::<_, PyErr>(urls)
             })?;
 
-            list.into_iter()
-                .map(|i| create_absolute_url(i, page))
-                .collect::<Result<Vec<_>>>()
-                .map(Some)
+            Ok(Some(list))
         } else {
             Ok(None)
         }
     }
 
-    fn kv(&self, content: &str) -> Result<Option<HashMap<String, String>>> {
+    fn parse(&self, content: &str) -> Result<Option<Pairs>> {
         if let Some(parse) = &self.parse_func {
-            let kv = Python::with_gil(|py| {
+            let pairs = Python::with_gil(|py| {
                 let args = PyTuple::new(py, [content]);
                 let result = parse.call1(py, args)?;
                 let dict = result.downcast::<PyDict>(py)?;
 
-                let mut kv = HashMap::new();
-                for (key, value) in dict {
+                let mut pairs = HashMap::new();
+                for (key, value) in dict.into_iter() {
                     let key = key.extract::<String>()?;
                     let value = value.extract::<String>()?;
-                    kv.insert(key, value);
+                    pairs.insert(key, value);
                 }
-                Ok::<_, pyo3::PyErr>(kv)
+                Ok::<_, PyErr>(pairs)
             })?;
 
-            Ok(Some(kv))
+            Ok(Some(pairs))
         } else {
             Ok(None)
         }
@@ -87,7 +79,7 @@ impl PageParser for PythonPageParser {
                 let args = PyTuple::new(py, [content]);
                 let result = validate.call1(py, args)?;
                 let valid = result.extract::<bool>(py)?;
-                Ok::<_, pyo3::PyErr>(valid)
+                Ok::<_, PyErr>(valid)
             })?;
             Ok(valid)
         } else {
@@ -95,26 +87,21 @@ impl PageParser for PythonPageParser {
         }
     }
 
-    fn page_type(&self) -> crate::PageType {
-        self.page_type
+    fn page_type_id(&self) -> crate::PageTypeId {
+        self.type_id
     }
 }
 
-fn prepare() {
+pub fn prepare() {
     pyo3::prepare_freethreaded_python();
-    let py_code = r#"import sys
+
+    // Ensuring current working durectory is in Python search path
+    {
+        let py_code = r#"import sys
 if '' not in sys.path:
     sys.path = [''] + sys.path"#;
-    Python::with_gil(|py| {
-        py.run(py_code, None, None).unwrap();
-    })
-}
-
-fn create_absolute_url(item: (String, PageType), page: &Page) -> Result<(Url, PageType)> {
-    let (url, page_type) = item;
-    if url.starts_with("http://") || url.starts_with("https://") {
-        Ok((Url::parse(&url)?, page_type))
-    } else {
-        Ok((page.url.join(&url)?, page_type))
+        Python::with_gil(|py| {
+            py.run(py_code, None, None).unwrap();
+        })
     }
 }

@@ -1,4 +1,4 @@
-use crate::{prelude::*, PageType};
+use crate::{prelude::*, PageTypeId};
 use futures::{stream::BoxStream, StreamExt};
 use int_enum::IntEnum;
 use sqlx::{
@@ -37,7 +37,7 @@ impl fmt::Display for PageStatus {
 pub struct Page {
     pub id: i64,
     pub url: Url,
-    pub page_type: PageType,
+    pub type_id: PageTypeId,
     pub depth: u16,
     pub status: PageStatus,
 }
@@ -47,12 +47,12 @@ impl fmt::Display for Page {
         write!(
             f,
             "Page {:3}  {:2}   depth {:3}   {:10}     {}",
-            self.id, self.page_type, self.depth, self.status, self.url
+            self.id, self.type_id, self.depth, self.status, self.url
         )
     }
 }
 
-type PageRow = (i64, String, PageType, u16, u8);
+type PageRow = (i64, String, PageTypeId, u16, u8);
 
 impl Storage {
     pub async fn new(url: &str) -> Result<Self> {
@@ -87,7 +87,7 @@ impl Storage {
     pub async fn register_page<U: TryInto<Url>>(
         &mut self,
         url: U,
-        page_type: PageType,
+        type_id: PageTypeId,
         depth: u16,
     ) -> Result<Option<i64>>
     where
@@ -95,7 +95,7 @@ impl Storage {
     {
         let new_id = sqlx::query("INSERT OR IGNORE INTO pages (url, type, depth) VALUES (?, ?, ?)")
             .bind(url.try_into()?.to_string())
-            .bind(page_type)
+            .bind(type_id)
             .bind(depth)
             .execute(&self.connection)
             .await?
@@ -156,8 +156,8 @@ impl Storage {
         }
     }
 
-    pub async fn read_page_content(&self, id: i64) -> Result<Option<(String, PageType)>> {
-        let content: Option<(String, PageType)> =
+    pub async fn read_page_content(&self, id: i64) -> Result<Option<(String, PageTypeId)>> {
+        let content: Option<(String, PageTypeId)> =
             sqlx::query_as("SELECT content, type FROM pages WHERE id = ?")
                 .bind(id)
                 .fetch_optional(&self.connection)
@@ -182,9 +182,9 @@ fn page_from_row(row: StdResult<SqliteRow, sqlx::Error>) -> Result<(Page, String
     let page_id: i64 = row.try_get("id")?;
     let url: String = row.try_get("url")?;
     let depth: u16 = row.try_get("depth")?;
-    let page_type: PageType = row.try_get("type")?;
+    let type_id: PageTypeId = row.try_get("type")?;
     let status: u8 = row.try_get("status")?;
-    let page = page_from_tuple((page_id, url, page_type, depth, status))?;
+    let page = page_from_tuple((page_id, url, type_id, depth, status))?;
 
     let content: String = row.try_get("content")?;
 
@@ -195,17 +195,17 @@ fn page_from_row(row: StdResult<SqliteRow, sqlx::Error>) -> Result<(Page, String
 ///
 /// - page_id - i64
 /// - url - String
-/// - page_type - PageType
+/// - type_id - PageType
 /// - depth - u16
 /// - status - u8
 fn page_from_tuple(row: PageRow) -> Result<Page> {
-    let (id, url, page_type, depth, status) = row;
+    let (id, url, type_id, depth, status) = row;
     let url = Url::parse(&url)?;
     let status = PageStatus::from_int(status)?;
     Ok(Page {
         id,
         url,
-        page_type,
+        type_id,
         depth,
         status,
     })
