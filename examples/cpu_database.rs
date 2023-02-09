@@ -13,7 +13,7 @@ use url::Url;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    crab::python::prepare("./cpu_database");
+    crab::python::prepare();
     let listing_page_parser = PythonPageParser::new("listing_page", 1)?;
     let details_page_parser = PythonPageParser::new("details_page", 2)?;
     //entrypoint(vec![Box::new(ListingPage), Box::new(CpuPage)]).await
@@ -58,7 +58,7 @@ impl PageParser for ListingPage {
         Ok(None)
     }
 
-    fn validate(&self, content: &str) -> bool {
+    fn validate(&self, content: &str) -> Result<bool> {
         validate_page(content)
     }
 
@@ -107,13 +107,13 @@ impl PageParser for CpuPage {
         Self::TYPE
     }
 
-    fn validate(&self, content: &str) -> bool {
+    fn validate(&self, content: &str) -> Result<bool> {
         validate_page(content)
     }
 }
 
-fn validate_page(content: &str) -> bool {
-    !content.contains("captcha")
+fn validate_page(content: &str) -> Result<bool> {
+    Ok(!content.contains("captcha"))
 }
 
 fn read_links(document: &Html, page: &Page) -> Result<Vec<(Url, PageType)>> {

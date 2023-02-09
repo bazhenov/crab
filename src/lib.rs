@@ -51,8 +51,8 @@ pub trait PageParser {
     ///
     /// If page is not valid it's content will not be written to storage
     /// and crawler will repeat request to the page
-    fn validate(&self, _content: &str) -> bool {
-        true
+    fn validate(&self, _content: &str) -> Result<bool> {
+        Ok(true)
     }
 
     fn page_type(&self) -> PageType;
@@ -78,7 +78,7 @@ impl PageParsers {
     /// and crawler will repeat request to the page
     fn validate(&self, page_type: PageType, content: &str) -> Result<bool> {
         let parser = page_parser(&self.0[..], page_type)?;
-        Ok(parser.validate(content))
+        Ok(parser.validate(content)?)
     }
 }
 
