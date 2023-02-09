@@ -72,7 +72,7 @@ impl Storage {
     }
 
     pub async fn list_pages(&self) -> Result<Vec<Page>> {
-        let query = "SELECT id, url, depth, status FROM pages";
+        let query = "SELECT id, url, type, depth, status FROM pages";
         let result_set: Vec<PageRow> = sqlx::query_as(query).fetch_all(&self.connection).await?;
         let mut pages = vec![];
         for row in result_set {
