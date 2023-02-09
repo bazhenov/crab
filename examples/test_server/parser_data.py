@@ -1,5 +1,6 @@
 from bs4 import BeautifulSoup
 
+TYPE_ID: int = 2
 
 def parse(content: str) -> dict[str, str]:
     html = BeautifulSoup(content, 'html.parser')

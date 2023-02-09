@@ -7,24 +7,26 @@ use pyo3::{
 use std::collections::HashMap;
 
 pub struct PythonPageParser {
-    type_id: PageTypeId,
+    page_type_id: PageTypeId,
     navigate_func: Option<PyObject>,
     parse_func: Option<PyObject>,
     validate_func: Option<PyObject>,
 }
 
 impl PythonPageParser {
-    pub fn new(module_name: &str, type_id: PageTypeId) -> Result<Self> {
+    pub fn new(module_name: &str) -> Result<Self> {
         Python::with_gil(|py| {
             let module = PyModule::import(py, module_name)?;
             let navigate_func = module.getattr("navigate").map(Into::into).ok();
             let parse_func = module.getattr("parse").map(Into::into).ok();
             let validate_func = module.getattr("validate").map(Into::into).ok();
+            let page_type_id: PyObject = module.getattr("TYPE_ID").map(Into::into)?;
+            let page_type_id = page_type_id.extract::<u8>(py)?;
             Ok(Self {
                 navigate_func,
                 parse_func,
                 validate_func,
-                type_id,
+                page_type_id,
             })
         })
     }
@@ -88,7 +90,7 @@ impl PageParser for PythonPageParser {
     }
 
     fn page_type_id(&self) -> crate::PageTypeId {
-        self.type_id
+        self.page_type_id
     }
 }
 

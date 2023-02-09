@@ -9,7 +9,6 @@ use crab::{
     PageParser, PageParsers, PageTypeId,
 };
 use futures::{select, FutureExt, StreamExt};
-use regex::Regex;
 use std::{env::current_dir, fs, io::stdout, path::Path, sync::Arc, time::Duration};
 use table::Table;
 use tokio::task::spawn_blocking;
@@ -206,18 +205,15 @@ async fn main() -> Result<()> {
 /// (eg. `1_listing_page.py`).
 fn create_python_parsers(path: impl AsRef<Path>) -> Result<Vec<Box<dyn PageParser>>> {
     python::prepare();
-    let py_pattern = Regex::new(r"^(([0-9]+)_.*)\.py$")?;
     let mut parsers: Vec<Box<dyn PageParser>> = vec![];
     for path in fs::read_dir(path)? {
         let path = path?;
         let file_name = path.file_name();
         let file_name = file_name.to_str().unwrap_or_default();
-        if path.path().is_file() {
-            if let Some(capture) = py_pattern.captures(file_name) {
+        if path.path().is_file() && file_name.starts_with("parser_") {
+            if let Some(module_name) = file_name.strip_suffix(".py") {
                 trace!("Building parser from python file: {}", file_name);
-                let type_id = capture.get(2).unwrap().as_str().parse::<u8>()?;
-                let module_name = capture.get(1).unwrap().as_str();
-                let parser = PythonPageParser::new(module_name, type_id)
+                let parser = PythonPageParser::new(module_name)
                     .context(AppError::UnableToCreateParser(path.path()))?;
                 parsers.push(Box::new(parser))
             }

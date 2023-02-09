@@ -208,7 +208,6 @@ dependencies = [
  "pyo3",
  "rand",
  "refinery",
- "regex",
  "reqwest",
  "sqlx",
  "tempfile",
