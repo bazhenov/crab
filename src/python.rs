@@ -6,7 +6,6 @@ use pyo3::{
 use reqwest::Url;
 use std::collections::HashMap;
 
-// TODO no need to do it public after refactoring
 pub struct PythonPageParser {
     page_type: PageType,
     navigate_func: Option<PyObject>,
@@ -16,6 +15,7 @@ pub struct PythonPageParser {
 
 impl PythonPageParser {
     pub fn new(module_name: &str, page_type: PageType) -> Result<Self> {
+        prepare();
         Python::with_gil(|py| {
             let module = PyModule::import(py, module_name)?;
             let navigate_func = module.getattr("navigate").map(Into::into).ok();
@@ -100,15 +100,13 @@ impl PageParser for PythonPageParser {
     }
 }
 
-// TODO no need to do it public after refactoring
-pub fn prepare() {
+fn prepare() {
     pyo3::prepare_freethreaded_python();
-    // TODO pass module path safely to the script
     let py_code = r#"import sys
 if '' not in sys.path:
     sys.path = [''] + sys.path"#;
     Python::with_gil(|py| {
-        py.run(&py_code, None, None).unwrap();
+        py.run(py_code, None, None).unwrap();
     })
 }
 

@@ -1,5 +1,4 @@
 use crate::{
-    cli::RunCrawlerOpts,
     prelude::*,
     proxy::{Proxies, ProxyStat},
     storage::{Page, Storage},
@@ -7,30 +6,51 @@ use crate::{
 };
 use anyhow::Context;
 use atom::Atom;
+use clap::Parser;
 use futures::{stream::FuturesUnordered, StreamExt};
 use reqwest::{Client, Proxy, Url};
 use std::{
     collections::HashSet,
+    path::PathBuf,
     sync::{atomic::Ordering, Arc},
     time::{Duration, Instant},
 };
 use tokio::time::sleep;
 
 #[derive(Clone, Default)]
-pub(crate) struct CrawlerState {
+pub struct CrawlerState {
     /// Number of requests crawler initiated from the start of it's running
-    pub(crate) requests: u32,
+    pub requests: u32,
     /// Number of requests finished successfully
-    pub(crate) successfull_requests: u32,
+    pub successfull_requests: u32,
     /// Number of new links has been found
-    pub(crate) new_links_found: u32,
+    pub new_links_found: u32,
     /// The set of ongoing requests
-    pub(crate) requests_in_flight: HashSet<Page>,
+    pub requests_in_flight: HashSet<Page>,
 
-    pub(crate) proxies: Vec<(Proxy, ProxyStat)>,
+    pub proxies: Vec<(Proxy, ProxyStat)>,
 }
 
-pub(crate) async fn run_crawler(
+#[derive(Parser, Debug)]
+pub struct RunCrawlerOpts {
+    /// after downloading each page parse next pages
+    #[arg(long, default_value = "false")]
+    pub(crate) navigate: bool,
+
+    /// timeout between requests in seconds
+    #[arg(long, default_value = "0.0")]
+    pub(crate) timeout_sec: f32,
+
+    /// number of threads
+    #[arg(long, default_value = "5")]
+    pub(crate) threads: usize,
+
+    /// path to proxies list
+    #[arg(short, long)]
+    pub(crate) proxies_list: Option<PathBuf>,
+}
+
+pub async fn run_crawler(
     handlers: PageParsers,
     mut storage: Storage,
     opts: RunCrawlerOpts,

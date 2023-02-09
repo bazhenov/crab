@@ -1,17 +1,13 @@
-pub use cli::entrypoint;
+use anyhow::Context;
 use prelude::*;
 use std::collections::HashMap;
 pub use storage::Page;
 use url::Url;
 
-pub(crate) mod cli;
-pub(crate) mod crawler;
-pub(crate) mod proxy;
-// TODO no need to do it public after refactoring
+pub mod crawler;
+mod proxy;
 pub mod python;
 pub mod storage;
-pub(crate) mod table;
-pub(crate) mod terminal;
 pub mod utils;
 
 pub mod prelude {
@@ -34,6 +30,12 @@ pub mod prelude {
 
         #[error("Handler for page type {} not found", .0)]
         PageHandlerNotFound(PageType),
+
+        #[error("Unable to create parser from file {}", .0.display())]
+        UnableToCreateParser(PathBuf),
+
+        #[error("Parser for page type {} failed", .0)]
+        PageParserFailed(PageType),
     }
 }
 
@@ -58,27 +60,38 @@ pub trait PageParser {
     fn page_type(&self) -> PageType;
 }
 
-struct PageParsers(Vec<Box<dyn PageParser>>);
+pub struct PageParsers(pub Vec<Box<dyn PageParser>>);
 
 impl PageParsers {
-    fn next_pages(&self, page: &Page, content: &str) -> Result<Option<Vec<(Url, PageType)>>> {
+    pub fn next_pages(&self, page: &Page, content: &str) -> Result<Option<Vec<(Url, PageType)>>> {
         let parser = page_parser(&self.0[..], page.page_type)?;
-        parser.next_pages(page, content)
+        parser
+            .next_pages(page, content)
+            .context(AppError::PageParserFailed(page.page_type))
     }
 
     /// Returns parsed key-value pairs for the page
-    fn kv(&self, page_type: PageType, content: &str) -> Result<Option<HashMap<String, String>>> {
+    pub fn kv(
+        &self,
+        page_type: PageType,
+        content: &str,
+    ) -> Result<Option<HashMap<String, String>>> {
         let parser = page_parser(&self.0[..], page_type)?;
-        parser.kv(content)
+        parser
+            .kv(content)
+            .context(AppError::PageParserFailed(page_type))
     }
 
     /// Validates page content
     ///
     /// If page is not valid it's content will not be written to storage
     /// and crawler will repeat request to the page
-    fn validate(&self, page_type: PageType, content: &str) -> Result<bool> {
+    pub fn validate(&self, page_type: PageType, content: &str) -> Result<bool> {
         let parser = page_parser(&self.0[..], page_type)?;
-        Ok(parser.validate(content)?)
+        let is_valid = parser
+            .validate(content)
+            .context(AppError::PageParserFailed(page_type))?;
+        Ok(is_valid)
     }
 }
 

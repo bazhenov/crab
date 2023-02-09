@@ -2,9 +2,9 @@ SEED_PAGE:=http://localhost:8080/page/1
 
 db.sqlite:
 	touch $@
-	refinery migrate
+	refinery migrate -p ../../migrations
 	cargo run --example=test_server -- add-seed "${SEED_PAGE}" 1
 
 out.csv: db.sqlite
-	cargo run --example=test_server -- run-crawler --navigate
-	cargo run --example=test_server -- export-csv > $@
+	cargo run -- run-crawler --navigate
+	cargo run -- export-csv > $@

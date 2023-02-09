@@ -1,5 +1,5 @@
-use crate::{crawler::CrawlerState, prelude::*};
 use atom::Atom;
+use crab::{crawler::CrawlerState, prelude::*};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,

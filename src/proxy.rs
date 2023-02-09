@@ -23,12 +23,12 @@ pub struct Proxies {
 }
 
 #[derive(Default, Clone)]
-pub(crate) struct ProxyStat {
+pub struct ProxyStat {
     /// Number of requests attempted via proxy
-    pub(crate) requests: u32,
+    pub requests: u32,
 
     /// Number of requests executed successfully via proxy
-    pub(crate) successfull_requests: u32,
+    pub successfull_requests: u32,
 
     alive_counter: AliveCounter,
 }
