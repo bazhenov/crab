@@ -8,7 +8,6 @@ pub mod crawler;
 mod proxy;
 pub mod python;
 pub mod storage;
-pub mod utils;
 
 pub mod prelude {
 
