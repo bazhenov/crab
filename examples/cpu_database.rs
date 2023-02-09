@@ -1,6 +1,7 @@
 use crab::{
     entrypoint,
     prelude::*,
+    python::PythonPageParser,
     utils::{url_set_query_param, Form},
     Page, PageParser, PageType,
 };
@@ -12,7 +13,15 @@ use url::Url;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    entrypoint(vec![Box::new(ListingPage), Box::new(CpuPage)]).await
+    crab::python::prepare("./cpu_database");
+    let listing_page_parser = PythonPageParser::new("listing_page", 1)?;
+    let details_page_parser = PythonPageParser::new("details_page", 2)?;
+    //entrypoint(vec![Box::new(ListingPage), Box::new(CpuPage)]).await
+    entrypoint(vec![
+        Box::new(listing_page_parser),
+        Box::new(details_page_parser),
+    ])
+    .await
 }
 
 lazy_static! {

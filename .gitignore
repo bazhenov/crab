@@ -2,4 +2,4 @@
 *.sqlite
 /*.csv
 /proxies.list
-/__pycache__
+__pycache__

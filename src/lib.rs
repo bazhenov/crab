@@ -7,6 +7,8 @@ use url::Url;
 pub(crate) mod cli;
 pub(crate) mod crawler;
 pub(crate) mod proxy;
+// TODO no need to do it public after refactoring
+pub mod python;
 pub mod storage;
 pub(crate) mod table;
 pub(crate) mod terminal;
