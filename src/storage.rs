@@ -32,10 +32,11 @@ pub enum PageStatus {
 
 impl fmt::Display for PageStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PageStatus::NotDownloaded => write!(f, "NotDownloaded"),
-            PageStatus::Downloaded => write!(f, "Downloaded"),
-        }
+        let display_value = match self {
+            PageStatus::NotDownloaded => "not downloaded",
+            PageStatus::Downloaded => "downloaded",
+        };
+        f.pad(display_value)
     }
 }
 
@@ -46,16 +47,6 @@ pub struct Page {
     pub type_id: PageTypeId,
     pub depth: u16,
     pub status: PageStatus,
-}
-
-impl fmt::Display for Page {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Page {:3}  {:2}   depth {:3}   {:10}     {}",
-            self.id, self.type_id, self.depth, self.status, self.url
-        )
-    }
 }
 
 type PageRow = (i64, String, PageTypeId, u16, u8);

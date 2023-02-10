@@ -69,7 +69,11 @@ enum Commands {
     },
 
     /// list pages in database
-    ListPages,
+    ListPages {
+        /// disable header output
+        #[arg(short = 'n', long, default_value_t = false)]
+        no_header: bool,
+    },
 
     /// prints pages failed validation check
     Validate {
@@ -200,10 +204,20 @@ async fn main() -> Result<()> {
             table.write(&mut stdout())?;
         }
 
-        Commands::ListPages => {
+        Commands::ListPages { no_header } => {
             let storage = Storage::new(&app_opts.database).await?;
+            if !no_header {
+                println!(
+                    "{:>7}  {:>7}  {:>5}  {:<15}  {:<20}",
+                    "id", "type_id", "depth", "status", "url"
+                );
+                println!("{}", "-".repeat(120));
+            }
             for page in storage.list_pages().await? {
-                println!("{}", page);
+                println!(
+                    "{:>7}  {:>7}  {:>5}  {:<15}  {:<20}",
+                    page.id, page.type_id, page.depth, page.status, page.url
+                )
             }
         }
 
