@@ -38,11 +38,13 @@ struct Opts {
 enum Commands {
     /// migrates database to a new version
     Migrate,
+
     /// create new parsing environment
     New {
         /// new of a new project
         workspace_path: PathBuf,
     },
+
     /// running crawler and download pages from internet
     RunCrawler(RunCrawlerOpts),
 
@@ -224,14 +226,23 @@ async fn main() -> Result<()> {
         Commands::Validate { reset } => {
             let storage = Storage::new(&app_opts.database).await?;
             let parsers = PageParsers(create_python_parsers(current_dir()?)?);
+
+            let mut invalid_pages = vec![];
             let mut pages = storage.read_downloaded_pages();
             while let Some(row) = pages.next().await {
                 let (page, content) = row?;
                 if !parsers.validate(page.type_id, &content)? {
                     println!("{}\t{}", page.id, page.url);
-                    if reset {
-                        storage.reset_page(page.id).await?;
-                    }
+                    invalid_pages.push(page.id);
+                }
+            }
+
+            // Page reset should be done after page iteration process is completed.
+            // Lock timeout will be generated otherwise.
+            if reset {
+                drop(pages);
+                for page_id in invalid_pages.into_iter() {
+                    storage.reset_page(page_id).await?;
                 }
             }
         }
