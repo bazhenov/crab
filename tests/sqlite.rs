@@ -1,19 +1,13 @@
 use crab::{
     prelude::*,
-    storage::{Page, PageStatus, Storage},
+    storage::{self, Page, PageStatus, Storage},
 };
 use futures::StreamExt;
-use refinery::config::{Config, ConfigDbType};
 use std::ops::Deref;
 use std::{fs::File, ops::DerefMut};
 use tempfile::{tempdir, TempDir};
 use tokio::test;
 use url::Url;
-
-mod embedded {
-    use refinery::embed_migrations;
-    embed_migrations!("./migrations");
-}
 
 #[test]
 pub async fn count_number_of_pages_in_database() -> Result<()> {
@@ -132,9 +126,7 @@ async fn new_storage() -> Result<TempStorage> {
     let file_name = temp_dir.path().join("sqlite.db");
     let file_name = file_name.to_str().unwrap();
     File::create(file_name)?;
-
-    let mut config = Config::new(ConfigDbType::Sqlite).set_db_path(&file_name);
-    embedded::migrations::runner().run(&mut config)?;
+    storage::migrate(file_name)?;
     let storage = Storage::new(&file_name).await?;
     Ok(TempStorage(storage, temp_dir))
 }

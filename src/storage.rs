@@ -5,8 +5,14 @@ use sqlx::{
     sqlite::{SqlitePoolOptions, SqliteRow},
     Row, SqlitePool,
 };
-use std::fmt;
+use std::{fmt, path::Path};
 use url::Url;
+
+use refinery::{
+    config::{Config, ConfigDbType},
+    embed_migrations,
+};
+embed_migrations!("./migrations");
 
 pub struct Storage {
     connection: SqlitePool,
@@ -209,4 +215,11 @@ fn page_from_tuple(row: PageRow) -> Result<Page> {
         depth,
         status,
     })
+}
+
+pub fn migrate(path: impl AsRef<Path>) -> Result<()> {
+    let database_path = path.as_ref().to_string_lossy();
+    let mut config = Config::new(ConfigDbType::Sqlite).set_db_path(database_path.as_ref());
+    migrations::runner().run(&mut config)?;
+    Ok(())
 }

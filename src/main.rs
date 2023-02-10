@@ -5,11 +5,18 @@ use crab::{
     crawler::{run_crawler, RunCrawlerOpts},
     prelude::*,
     python::{self, PythonPageParser},
-    storage::Storage,
+    storage::{self, Storage},
     PageParser, PageParsers, PageTypeId,
 };
 use futures::{select, FutureExt, StreamExt};
-use std::{env::current_dir, fs, io::stdout, path::Path, sync::Arc, time::Duration};
+use std::{
+    env::current_dir,
+    fs::{self, File},
+    io::stdout,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 use table::Table;
 use tokio::task::spawn_blocking;
 
@@ -29,6 +36,13 @@ struct Opts {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Commands {
+    /// migrates database to a new version
+    Migrate,
+    /// create new parsing environment
+    New {
+        /// new of a new project
+        workspace_path: PathBuf,
+    },
     /// running crawler and download pages from internet
     RunCrawler(RunCrawlerOpts),
 
@@ -74,12 +88,25 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
-    let opts = Opts::parse();
-    let mut storage = Storage::new(&opts.database).await?;
-    let parsers = PageParsers(create_python_parsers(current_dir()?)?);
+    let app_opts = Opts::parse();
 
-    match opts.command {
+    match app_opts.command {
+        Commands::New { workspace_path } => {
+            fs::create_dir(&workspace_path)?;
+            let database_path = workspace_path.join("db.sqlite");
+            File::create(&database_path)?;
+            storage::migrate(database_path)?;
+            fs::write(
+                workspace_path.join("parser_home_page.py"),
+                include_str!("example_parser.py"),
+            )?;
+        }
+        Commands::Migrate => {
+            storage::migrate(&app_opts.database)?;
+        }
         Commands::RunCrawler(opts) => {
+            let storage = Storage::new(&app_opts.database).await?;
+            let parsers = PageParsers(create_python_parsers(current_dir()?)?);
             let report = Arc::new(Atom::empty());
             let tick_interval = Duration::from_millis(100);
             let terminal_handle = {
@@ -103,10 +130,13 @@ async fn main() -> Result<()> {
         }
 
         Commands::Register { url, type_id } => {
+            let mut storage = Storage::new(&app_opts.database).await?;
             storage.register_page(url.as_str(), type_id, 0).await?;
         }
 
         Commands::Navigate { page_id } => {
+            let storage = Storage::new(&app_opts.database).await?;
+            let parsers = PageParsers(create_python_parsers(current_dir()?)?);
             let content = storage.read_page_content(page_id).await?;
             let page = storage.read_page(page_id).await?;
             let (page, (content, _)) = page.zip(content).ok_or(AppError::PageNotFound(page_id))?;
@@ -116,6 +146,8 @@ async fn main() -> Result<()> {
         }
 
         Commands::NavigateAll => {
+            let mut storage = Storage::new(&app_opts.database).await?;
+            let parsers = PageParsers(create_python_parsers(current_dir()?)?);
             // Need to buffer all found page links so iterating over downloaded pages doesn't
             // interfere with page registering process
             let mut links = vec![];
@@ -138,6 +170,8 @@ async fn main() -> Result<()> {
         }
 
         Commands::Parse { name, page_id } => {
+            let storage = Storage::new(&app_opts.database).await?;
+            let parsers = PageParsers(create_python_parsers(current_dir()?)?);
             let (content, type_id) = storage
                 .read_page_content(page_id)
                 .await?
@@ -149,6 +183,8 @@ async fn main() -> Result<()> {
         }
 
         Commands::ExportCsv { name } => {
+            let storage = Storage::new(&app_opts.database).await?;
+            let parsers = PageParsers(create_python_parsers(current_dir()?)?);
             let mut table = Table::default();
             let mut pages = storage.read_downloaded_pages();
 
@@ -165,12 +201,15 @@ async fn main() -> Result<()> {
         }
 
         Commands::ListPages => {
+            let storage = Storage::new(&app_opts.database).await?;
             for page in storage.list_pages().await? {
                 println!("{}", page);
             }
         }
 
         Commands::Validate { reset } => {
+            let storage = Storage::new(&app_opts.database).await?;
+            let parsers = PageParsers(create_python_parsers(current_dir()?)?);
             let mut pages = storage.read_downloaded_pages();
             while let Some(row) = pages.next().await {
                 let (page, content) = row?;
@@ -184,6 +223,7 @@ async fn main() -> Result<()> {
         }
 
         Commands::Dump { page_id } => {
+            let storage = Storage::new(&app_opts.database).await?;
             let (content, _) = storage
                 .read_page_content(page_id)
                 .await?
@@ -191,7 +231,10 @@ async fn main() -> Result<()> {
             println!("{}", content);
         }
 
-        Commands::Reset { page_id } => storage.reset_page(page_id).await?,
+        Commands::Reset { page_id } => {
+            let storage = Storage::new(&app_opts.database).await?;
+            storage.reset_page(page_id).await?
+        }
     }
 
     Ok(())
