@@ -89,12 +89,16 @@ enum Commands {
 
     /// resets page download status
     Reset { page_id: i64 },
+
+    /// display information about parsers
+    Parsers,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
     let app_opts = Opts::parse();
+    let parsers_path = current_dir()?;
 
     match app_opts.command {
         Commands::New { workspace_path } => {
@@ -112,7 +116,7 @@ async fn main() -> Result<()> {
         }
         Commands::RunCrawler(opts) => {
             let storage = Storage::new(&app_opts.database).await?;
-            let parsers = PageParsers(create_python_parsers(current_dir()?)?);
+            let parsers = PageParsers(create_dyn_python_parsers(parsers_path)?);
             let report = Arc::new(Atom::empty());
             let tick_interval = Duration::from_millis(100);
             let terminal_handle = {
@@ -142,7 +146,7 @@ async fn main() -> Result<()> {
 
         Commands::Navigate { page_id } => {
             let storage = Storage::new(&app_opts.database).await?;
-            let parsers = PageParsers(create_python_parsers(current_dir()?)?);
+            let parsers = PageParsers(create_dyn_python_parsers(parsers_path)?);
             let content = storage.read_page_content(page_id).await?;
             let page = storage.read_page(page_id).await?;
             let (page, (content, _)) = page.zip(content).ok_or(AppError::PageNotFound(page_id))?;
@@ -153,7 +157,7 @@ async fn main() -> Result<()> {
 
         Commands::NavigateAll => {
             let mut storage = Storage::new(&app_opts.database).await?;
-            let parsers = PageParsers(create_python_parsers(current_dir()?)?);
+            let parsers = PageParsers(create_dyn_python_parsers(parsers_path)?);
             // Need to buffer all found page links so iterating over downloaded pages doesn't
             // interfere with page registering process
             let mut links = vec![];
@@ -177,7 +181,7 @@ async fn main() -> Result<()> {
 
         Commands::Parse { name, page_id } => {
             let storage = Storage::new(&app_opts.database).await?;
-            let parsers = PageParsers(create_python_parsers(current_dir()?)?);
+            let parsers = PageParsers(create_dyn_python_parsers(parsers_path)?);
             let (content, type_id) = storage
                 .read_page_content(page_id)
                 .await?
@@ -190,7 +194,7 @@ async fn main() -> Result<()> {
 
         Commands::ExportCsv { name } => {
             let storage = Storage::new(&app_opts.database).await?;
-            let parsers = PageParsers(create_python_parsers(current_dir()?)?);
+            let parsers = PageParsers(create_dyn_python_parsers(parsers_path)?);
             let mut table = Table::default();
             let mut pages = storage.read_downloaded_pages();
 
@@ -225,7 +229,7 @@ async fn main() -> Result<()> {
 
         Commands::Validate { reset } => {
             let storage = Storage::new(&app_opts.database).await?;
-            let parsers = PageParsers(create_python_parsers(current_dir()?)?);
+            let parsers = PageParsers(create_dyn_python_parsers(parsers_path)?);
 
             let mut invalid_pages = vec![];
             let mut pages = storage.read_downloaded_pages();
@@ -260,9 +264,34 @@ async fn main() -> Result<()> {
             let storage = Storage::new(&app_opts.database).await?;
             storage.reset_page(page_id).await?
         }
+
+        Commands::Parsers => {
+            println!(
+                "{:<25}   {:>8}   {:<12} {:<12} {:<12}",
+                "MODULE NAME", "TYPE ID", "NAVIGATION", "PARSING", "VALIDATION"
+            );
+            for parser in create_python_parsers(parsers_path)? {
+                println!(
+                    "{:<25}   {:>8}   {:<12} {:<12} {:<12}",
+                    parser.module_name(),
+                    parser.page_type_id(),
+                    label(parser.support_navigation(), "yes", "no"),
+                    label(parser.support_parsing(), "yes", "no"),
+                    label(parser.support_validation(), "yes", "no")
+                )
+            }
+        }
     }
 
     Ok(())
+}
+
+fn label<'a>(v: bool, yes: &'a str, no: &'a str) -> &'a str {
+    if v {
+        yes
+    } else {
+        no
+    }
 }
 
 /// Initialize python environment and create python parser.
@@ -271,9 +300,26 @@ async fn main() -> Result<()> {
 /// * each parser is located in separate python file in current working directory;
 /// * each parser should be named `{type_id}_name.py`, where `type_id` is [`PageTypeId`] of a parser
 /// (eg. `1_listing_page.py`).
-fn create_python_parsers(path: impl AsRef<Path>) -> Result<Vec<Box<dyn PageParser>>> {
+fn create_dyn_python_parsers(path: impl AsRef<Path>) -> Result<Vec<Box<dyn PageParser>>> {
+    Ok(create_python_parsers(path)?
+        .into_iter()
+        .map(heap_allocate)
+        .collect())
+}
+
+fn heap_allocate<T: PageParser + 'static>(parser: T) -> Box<dyn PageParser> {
+    Box::new(parser)
+}
+
+/// Initialize python environment and create python parser.
+///
+/// Python parsers created using following convention:
+/// * each parser is located in separate python file in current working directory;
+/// * each parser should be named `{type_id}_name.py`, where `type_id` is [`PageTypeId`] of a parser
+/// (eg. `1_listing_page.py`).
+fn create_python_parsers(path: impl AsRef<Path>) -> Result<Vec<PythonPageParser>> {
     python::prepare();
-    let mut parsers: Vec<Box<dyn PageParser>> = vec![];
+    let mut parsers = vec![];
     for path in fs::read_dir(path)? {
         let path = path?;
         let file_name = path.file_name();
@@ -283,7 +329,7 @@ fn create_python_parsers(path: impl AsRef<Path>) -> Result<Vec<Box<dyn PageParse
                 trace!("Building parser from python file: {}", file_name);
                 let parser = PythonPageParser::new(module_name)
                     .context(AppError::UnableToCreateParser(path.path()))?;
-                parsers.push(Box::new(parser))
+                parsers.push(parser)
             }
         }
     }

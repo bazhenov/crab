@@ -7,6 +7,7 @@ use pyo3::{
 use std::collections::HashMap;
 
 pub struct PythonPageParser {
+    module_name: String,
     page_type_id: PageTypeId,
     navigate_func: Option<PyObject>,
     parse_func: Option<PyObject>,
@@ -16,19 +17,37 @@ pub struct PythonPageParser {
 impl PythonPageParser {
     pub fn new(module_name: &str) -> Result<Self> {
         Python::with_gil(|py| {
-            let module = PyModule::import(py, module_name)?;
+            let module_name = module_name.to_string();
+            let module = PyModule::import(py, module_name.as_str())?;
             let navigate_func = module.getattr("navigate").map(Into::into).ok();
             let parse_func = module.getattr("parse").map(Into::into).ok();
             let validate_func = module.getattr("validate").map(Into::into).ok();
             let page_type_id: PyObject = module.getattr("TYPE_ID").map(Into::into)?;
             let page_type_id = page_type_id.extract::<u8>(py)?;
             Ok(Self {
+                module_name,
                 navigate_func,
                 parse_func,
                 validate_func,
                 page_type_id,
             })
         })
+    }
+
+    pub fn module_name(&self) -> &str {
+        &self.module_name
+    }
+
+    pub fn support_navigation(&self) -> bool {
+        self.navigate_func.is_some()
+    }
+
+    pub fn support_parsing(&self) -> bool {
+        self.parse_func.is_some()
+    }
+
+    pub fn support_validation(&self) -> bool {
+        self.validate_func.is_some()
     }
 }
 
