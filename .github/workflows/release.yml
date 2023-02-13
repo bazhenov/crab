@@ -1,0 +1,79 @@
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+    - "[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  create-release:
+    name: create-release
+    runs-on: ubuntu-22.04
+    outputs:
+      upload_url: ${{ steps.release.outputs.upload_url }}
+    steps:
+      - name: Create GitHub release
+        id: release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: v${{ github.ref }}
+          draft: true
+          prerelease: true
+
+  build-and-upload:
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+        # - target: x86_64-unknown-linux-gnu
+        #   os: ubuntu-22.04
+        - target: x86_64-apple-darwin
+          os: macos-11
+    runs-on: ${{ matrix.os}}
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Rust
+      run: rustup update stable && rustup default stable
+
+    - name: Install Dependencies (MacOS)
+      if: matrix.os == 'macos-11'
+      run: |
+        brew install python@3.11
+
+    - name: Build Release
+      run: |
+        echo "RELEASE_FQN=crab-${{ github.ref_name }}-${{ matrix.target }}" >> $GITHUB_ENV
+        PYO3_CONFIG=ci/macos/python-config cargo build --locked --release
+
+    - name: Patching linked libraries (MacOS)
+      if: matrix.os == 'macos-11'
+      # On a GHA runner specific configuration of PyO3 is needed because
+      # pyo3 is linked against standart python distribution in a /Library/Frameworks,
+      # instead of homebrew installed one
+      run: |
+        install_name_tool -change /Library/Frameworks/Python.framework/Versions/3.11/Python /usr/local/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python target/release/crab
+
+    - name: Create Release Archive
+      run: |
+        mkdir release
+        cp target/release/crab release/
+        cp README.md release/
+        mv release ${{ env.RELEASE_FQN }}
+        tar czvf ${{ env.RELEASE_FQN }}.tar.gz ${{ env.RELEASE_FQN }}
+
+    - name: Upload release archive
+      uses: actions/upload-release-asset@v1.0.2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ${{ env.RELEASE_FQN }}.tar.gz
+        asset_name: ${{ env.RELEASE_FQN }}.tar.gz
+        asset_content_type: application/octet-stream
