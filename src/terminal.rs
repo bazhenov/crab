@@ -1,5 +1,4 @@
-use atom::Atom;
-use crab::{crawler::CrawlerState, prelude::*};
+use crab::{crawler::CrawlerState, prelude::*, CrawlerReport, Shared};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -8,7 +7,7 @@ use crossterm::{
 use std::{
     fmt::Display,
     io,
-    sync::{atomic::Ordering, Arc},
+    sync::atomic::Ordering,
     time::{Duration, Instant},
 };
 use tui::{
@@ -26,7 +25,7 @@ enum MainPanelMode {
     Proxies,
 }
 
-pub(crate) fn ui(state: Arc<Atom<Box<CrawlerState>>>, tick_rate: Duration) -> Result<()> {
+pub(crate) fn ui(state: Shared<CrawlerReport>, tick_rate: Duration) -> Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
@@ -55,7 +54,7 @@ pub(crate) fn ui(state: Arc<Atom<Box<CrawlerState>>>, tick_rate: Duration) -> Re
 
 fn run_terminal<B: Backend>(
     terminal: &mut Terminal<B>,
-    state: Arc<Atom<Box<CrawlerState>>>,
+    state: Shared<CrawlerReport>,
     tick_duration: Duration,
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
@@ -64,8 +63,13 @@ fn run_terminal<B: Backend>(
     loop {
         current_state = state.take(Ordering::Relaxed).or(current_state);
 
-        if let Some(state) = &current_state {
-            terminal.draw(|f| draw_widgets(f, state, main_panel_mode))?;
+        if let Some(report) = &current_state {
+            match report.as_ref() {
+                CrawlerReport::Report(report) => {
+                    terminal.draw(|f| draw_widgets(f, report, main_panel_mode))?;
+                }
+                CrawlerReport::Finished => return Ok(()),
+            }
         }
 
         let timeout = tick_duration

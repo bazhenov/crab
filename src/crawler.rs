@@ -2,17 +2,16 @@ use crate::{
     prelude::*,
     proxy::{Proxies, ProxyStat},
     storage::{Page, Storage},
-    PageParsers,
+    CrawlerReport, PageParsers, Shared,
 };
 use anyhow::Context;
-use atom::Atom;
 use clap::Parser;
 use futures::{stream::FuturesUnordered, StreamExt};
 use reqwest::{Client, Proxy, Url};
 use std::{
     collections::HashSet,
     path::PathBuf,
-    sync::{atomic::Ordering, Arc},
+    sync::atomic::Ordering,
     time::{Duration, Instant},
 };
 use tokio::time::sleep;
@@ -54,7 +53,7 @@ pub async fn run_crawler(
     parsers: PageParsers,
     mut storage: Storage,
     opts: RunCrawlerOpts,
-    report: (Arc<Atom<Box<CrawlerState>>>, Duration),
+    report: (Shared<CrawlerReport>, Duration),
 ) -> Result<()> {
     let (report, report_tick) = report;
     let mut last_report_time = Instant::now();
@@ -68,14 +67,14 @@ pub async fn run_crawler(
         None => Proxies::default(),
     };
 
-    report.swap(Box::new(state.clone()), Ordering::Relaxed);
+    report.swap(Box::new(state.clone().into()), Ordering::Relaxed);
 
     loop {
         // REPORTING PHASE
         if last_report_time.elapsed() >= report_tick {
             let mut state = state.clone();
             state.proxies = proxies.stat();
-            report.swap(Box::new(state), Ordering::Relaxed);
+            report.swap(Box::new(state.into()), Ordering::Relaxed);
             last_report_time = Instant::now();
         }
 

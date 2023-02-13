@@ -1,6 +1,8 @@
 use anyhow::Context;
+use atom::Atom;
+use crawler::CrawlerState;
 use prelude::*;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 pub use storage::Page;
 use url::Url;
 
@@ -8,6 +10,19 @@ pub mod crawler;
 mod proxy;
 pub mod python;
 pub mod storage;
+
+pub type Shared<T> = Arc<Atom<Box<T>>>;
+
+pub enum CrawlerReport {
+    Report(CrawlerState),
+    Finished,
+}
+
+impl From<CrawlerState> for CrawlerReport {
+    fn from(value: CrawlerState) -> Self {
+        Self::Report(value)
+    }
+}
 
 pub mod prelude {
 

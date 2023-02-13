@@ -6,7 +6,7 @@ use crab::{
     prelude::*,
     python::{self, PythonPageParser},
     storage::{self, Storage},
-    PageParser, PageParsers, PageTypeId,
+    CrawlerReport, PageParser, PageParsers, PageTypeId,
 };
 use futures::{select, FutureExt, StreamExt};
 use std::{
@@ -14,7 +14,7 @@ use std::{
     fs::{self, File},
     io::stdout,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{atomic::Ordering, Arc},
     time::Duration,
 };
 use table::Table;
@@ -129,7 +129,8 @@ async fn entrypoint() -> Result<()> {
                     let report = report.clone();
                     spawn_blocking(move || terminal::ui(report, tick_interval))
                 };
-                let crawling_handle = run_crawler(parsers, storage, opts, (report, tick_interval));
+                let crawling_handle =
+                    run_crawler(parsers, storage, opts, (report.clone(), tick_interval));
 
                 let mut crawler_handle = Box::pin(crawling_handle.fuse());
                 let mut terminal_handle = Box::pin(terminal_handle.fuse());
@@ -139,6 +140,7 @@ async fn entrypoint() -> Result<()> {
                     result = terminal_handle => result??,
                     // If crawler is finished first we still need to wait on terminal
                     result = crawler_handle => {
+                        report.swap(Box::new(CrawlerReport::Finished), Ordering::Relaxed);
                         result?;
                         terminal_handle.await??;
                     },
