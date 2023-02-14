@@ -59,15 +59,16 @@ Let's write simple parser for brainyquote.com. Start a new project
 $ crab new brainyquote
 $ cd brainyquote
 $ ls
+crab.toml
 db.sqlite
 parser_home_page.py
 ```
 
-Crab creates main database file as well as skeleton of python parser.
+Crab creates main database file as well as skeleton of a python parser.
 
 ### Downloading first page
 
-Now let's register our first page in a database
+Now let's register our first page in the database
 
 ```
 $ crab register https://www.brainyquote.com/ 1
