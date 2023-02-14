@@ -40,8 +40,8 @@ pub mod prelude {
         #[error("Page #{} not found", .0)]
         PageNotFound(i64),
 
-        #[error("Opening proxy list: {}", .0.display())]
-        UnableToOpenProxyList(PathBuf),
+        #[error("Loading proxy list: {}", .0.display())]
+        LoadingProxyList(PathBuf),
 
         #[error("Page parser for type id {} not found", .0)]
         PageParserNotFound(PageTypeId),

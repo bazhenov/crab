@@ -129,7 +129,7 @@ async fn entrypoint() -> Result<()> {
 
     match &app_opts.command {
         Commands::New { workspace } => {
-            fs::create_dir(&workspace)?;
+            fs::create_dir(workspace)?;
 
             let config = CrabConfig::default_config();
             fs::write(workspace.join("crab.toml"), toml::to_string(&config)?)?;
@@ -224,7 +224,7 @@ async fn entrypoint() -> Result<()> {
                 .await?
                 .ok_or(AppError::PageNotFound(*page_id))?;
             let pairs = parsers.parse(type_id, &content)?.unwrap_or_default();
-            for (key, value) in pairs.into_iter().filter(key_contains(&name)) {
+            for (key, value) in pairs.into_iter().filter(key_contains(name)) {
                 println!("{}: {}", &key, &value)
             }
         }
@@ -240,7 +240,7 @@ async fn entrypoint() -> Result<()> {
                     .parse(page.type_id, &content)?
                     .unwrap_or_default()
                     .into_iter()
-                    .filter(key_contains(&name));
+                    .filter(key_contains(name));
                 table.add_row(pairs);
             }
             table.write(&mut stdout())?;

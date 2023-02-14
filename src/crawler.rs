@@ -42,8 +42,10 @@ pub async fn run_crawler(
     let delay = Duration::from_secs_f32(opts.delay_sec);
     let mut futures = FuturesUnordered::new();
     let mut pages = vec![];
-    let mut proxies = match opts.proxies {
-        Some(path) => Proxies::from_file(&path).context(AppError::UnableToOpenProxyList(path))?,
+    let mut proxies = match &opts.proxies {
+        Some(path) => {
+            Proxies::from_file(&path).context(AppError::LoadingProxyList(path.clone()))?
+        }
         None => Proxies::default(),
     };
 
