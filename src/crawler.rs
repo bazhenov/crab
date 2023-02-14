@@ -2,15 +2,13 @@ use crate::{
     prelude::*,
     proxy::{Proxies, ProxyStat},
     storage::{Page, Storage},
-    CrawlerReport, PageParsers, Shared,
+    CrawlerConfig, CrawlerReport, PageParsers, Shared,
 };
 use anyhow::Context;
-use clap::Parser;
 use futures::{stream::FuturesUnordered, StreamExt};
 use reqwest::{Client, Proxy, Url};
 use std::{
     collections::HashSet,
-    path::PathBuf,
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
@@ -30,39 +28,21 @@ pub struct CrawlerState {
     pub proxies: Vec<(Proxy, ProxyStat)>,
 }
 
-#[derive(Parser, Debug)]
-pub struct RunCrawlerOpts {
-    /// after downloading each page parse next pages
-    #[arg(long, default_value = "false")]
-    pub(crate) navigate: bool,
-
-    /// timeout between requests in seconds
-    #[arg(long, default_value = "0.0")]
-    pub(crate) timeout_sec: f32,
-
-    /// number of threads
-    #[arg(long, default_value = "5")]
-    pub(crate) threads: usize,
-
-    /// path to proxies list
-    #[arg(short, long)]
-    pub(crate) proxies_list: Option<PathBuf>,
-}
-
 pub async fn run_crawler(
     parsers: PageParsers,
     mut storage: Storage,
-    opts: RunCrawlerOpts,
+    opts: CrawlerConfig,
+    navigate: bool,
     report: (Shared<CrawlerReport>, Duration),
 ) -> Result<()> {
     let (report, report_tick) = report;
     let mut last_report_time = Instant::now();
 
     let mut state = CrawlerState::default();
-    let delay = Duration::from_secs_f32(opts.timeout_sec);
+    let delay = Duration::from_secs_f32(opts.delay_sec);
     let mut futures = FuturesUnordered::new();
     let mut pages = vec![];
-    let mut proxies = match opts.proxies_list {
+    let mut proxies = match opts.proxies {
         Some(path) => Proxies::from_file(&path).context(AppError::UnableToOpenProxyList(path))?,
         None => Proxies::default(),
     };
@@ -91,7 +71,7 @@ pub async fn run_crawler(
             let next_page = pages.swap_remove(0);
             let next_proxy = proxies.next();
             let (proxy, proxy_id) = next_proxy.unzip();
-            let client = create_http_client(proxy)?;
+            let client = create_http_client(&opts, proxy)?;
 
             state.requests += 1;
             state.requests_in_flight.insert(next_page.clone());
@@ -116,7 +96,7 @@ pub async fn run_crawler(
                             state.successfull_requests += 1;
                             storage.write_page_content(page.id, &content).await?;
 
-                            if opts.navigate {
+                            if navigate {
                                 navigate_page(&parsers, &page, &content, &mut storage, &mut state)
                                     .await?;
                             }
@@ -166,14 +146,16 @@ async fn navigate_page(
     Ok(())
 }
 
-fn create_http_client(proxy: Option<Proxy>) -> Result<Client> {
+fn create_http_client(opts: &CrawlerConfig, proxy: Option<Proxy>) -> Result<Client> {
     let mut builder = Client::builder();
     if let Some(proxy) = proxy {
         builder = builder.proxy(proxy);
     }
+    let connect_timeout = opts.connect_timeout_sec.unwrap_or(5.0);
+    let read_timeout = opts.read_timeout_sec.unwrap_or(5.0);
     let client = builder
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(10))
+        .connect_timeout(Duration::from_secs_f32(connect_timeout))
+        .timeout(Duration::from_secs_f32(read_timeout))
         .danger_accept_invalid_certs(true)
         .build()?;
     Ok(client)

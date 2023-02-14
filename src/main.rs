@@ -2,15 +2,14 @@ use anyhow::Context;
 use atom::Atom;
 use clap::Parser;
 use crab::{
-    crawler::{run_crawler, RunCrawlerOpts},
+    crawler::run_crawler,
     prelude::*,
     python::{self, PythonPageParser},
     storage::{self, Storage},
-    CrawlerReport, PageParser, PageParsers, PageTypeId,
+    CrabConfig, CrawlerReport, PageParser, PageParsers, PageTypeId,
 };
 use futures::{select, FutureExt, StreamExt};
 use std::{
-    env::current_dir,
     fs::{self, File},
     io::stdout,
     path::{Path, PathBuf},
@@ -26,8 +25,8 @@ mod terminal;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Opts {
-    #[arg(short, long, value_name = "file", default_value = "./db.sqlite")]
-    database: String,
+    #[arg(short, long, value_name = "file", default_value = ".")]
+    workspace: PathBuf,
 
     #[command(subcommand)]
     command: Commands,
@@ -41,12 +40,16 @@ enum Commands {
 
     /// create new parsing environment
     New {
-        /// new of a new project
-        workspace_path: PathBuf,
+        /// path to workspace
+        workspace: PathBuf,
     },
 
     /// running crawler and download pages from internet
-    RunCrawler(RunCrawlerOpts),
+    RunCrawler {
+        /// after downloading each page parse next pages
+        #[arg(long, default_value = "false")]
+        navigate: bool,
+    },
 
     /// add page to the database
     Register { url: String, type_id: PageTypeId },
@@ -100,200 +103,222 @@ async fn main() -> Result<()> {
     entrypoint().await
 }
 
+fn read_config(path: impl AsRef<Path>) -> Result<CrabConfig> {
+    let toml = fs::read_to_string(&path)?;
+    Ok(toml::from_str(&toml)?)
+}
+
+async fn read_env(opts: &Opts) -> Result<(CrabConfig, Storage, PageParsers)> {
+    let config_path = opts.workspace.join("crab.toml");
+    let config = read_config(&config_path).context(AppError::ReadingConfig(config_path.clone()))?;
+
+    let database_path = config.database.to_str().unwrap();
+    let storage = Storage::new(database_path)
+        .await
+        .context(AppError::OpeningDatabase)?;
+
+    let parsers =
+        create_dyn_python_parsers(&opts.workspace).context(AppError::LoadingPythonParsers)?;
+    let parsers = PageParsers(parsers);
+    Ok((config, storage, parsers))
+}
+
 async fn entrypoint() -> Result<()> {
-    {
-        env_logger::init();
-        let app_opts = Opts::parse();
-        let parsers_path = current_dir()?;
+    env_logger::init();
+    let app_opts = Opts::parse();
 
-        match app_opts.command {
-            Commands::New { workspace_path } => {
-                fs::create_dir(&workspace_path)?;
-                let database_path = workspace_path.join("db.sqlite");
-                File::create(&database_path)?;
-                storage::migrate(database_path)?;
-                fs::write(
-                    workspace_path.join("parser_home_page.py"),
-                    include_str!("example_parser.py"),
-                )?;
+    match &app_opts.command {
+        Commands::New { workspace } => {
+            fs::create_dir(&workspace)?;
+
+            let config = CrabConfig::default_config();
+            fs::write(workspace.join("crab.toml"), toml::to_string(&config)?)?;
+
+            let database_path = workspace.join(&config.database);
+            File::create(&database_path)?;
+            storage::migrate(database_path)?;
+            fs::write(
+                workspace.join("parser_home_page.py"),
+                include_str!("example_parser.py"),
+            )?;
+        }
+
+        Commands::Migrate => {
+            let (config, _, _) = read_env(&app_opts).await?;
+            storage::migrate(config.database)?;
+        }
+
+        Commands::RunCrawler { navigate } => {
+            let (config, storage, parsers) = read_env(&app_opts).await?;
+            let report = Arc::new(Atom::empty());
+            let tick_interval = Duration::from_millis(100);
+            let terminal_handle = {
+                let report = report.clone();
+                spawn_blocking(move || terminal::ui(report, tick_interval))
+            };
+            let crawling_handle = run_crawler(
+                parsers,
+                storage,
+                config.crawler,
+                *navigate,
+                (report.clone(), tick_interval),
+            );
+
+            let mut crawler_handle = Box::pin(crawling_handle.fuse());
+            let mut terminal_handle = Box::pin(terminal_handle.fuse());
+
+            select! {
+                // If terminal is finished first we do not want to wait on crawler
+                result = terminal_handle => result??,
+                // If crawler is finished first we still need to wait on terminal
+                result = crawler_handle => {
+                    report.swap(Box::new(CrawlerReport::Finished), Ordering::Relaxed);
+                    result?;
+                    terminal_handle.await??;
+                },
+            };
+        }
+
+        Commands::Register { url, type_id } => {
+            let (_, mut storage, _) = read_env(&app_opts).await?;
+            storage.register_page(url.as_str(), *type_id, 0).await?;
+        }
+
+        Commands::Navigate { page_id } => {
+            let (_, storage, parsers) = read_env(&app_opts).await?;
+            let content = storage.read_page_content(*page_id).await?;
+            let page = storage.read_page(*page_id).await?;
+            let (page, (content, _)) = page.zip(content).ok_or(AppError::PageNotFound(*page_id))?;
+            for (link, type_id) in parsers.navigate(&page, &content)?.unwrap_or_default() {
+                println!("{:3}  {}", type_id, link);
             }
-            Commands::Migrate => {
-                storage::migrate(&app_opts.database)?;
+        }
+
+        Commands::NavigateAll => {
+            let (_, mut storage, parsers) = read_env(&app_opts).await?;
+            // Need to buffer all found page links so iterating over downloaded pages doesn't
+            // interfere with page registering process
+            let mut links = vec![];
+
+            let mut pages = storage.read_downloaded_pages();
+            while let Some(row) = pages.next().await {
+                let (page, content) = row?;
+                let page_links = parsers.navigate(&page, &content)?;
+                links.push((page.depth, page_links));
             }
-            Commands::RunCrawler(opts) => {
-                let storage = Storage::new(&app_opts.database).await?;
-                let parsers = PageParsers(create_dyn_python_parsers(parsers_path)?);
-                let report = Arc::new(Atom::empty());
-                let tick_interval = Duration::from_millis(100);
-                let terminal_handle = {
-                    let report = report.clone();
-                    spawn_blocking(move || terminal::ui(report, tick_interval))
-                };
-                let crawling_handle =
-                    run_crawler(parsers, storage, opts, (report.clone(), tick_interval));
+            drop(pages);
 
-                let mut crawler_handle = Box::pin(crawling_handle.fuse());
-                let mut terminal_handle = Box::pin(terminal_handle.fuse());
-
-                select! {
-                    // If terminal is finished first we do not want to wait on crawler
-                    result = terminal_handle => result??,
-                    // If crawler is finished first we still need to wait on terminal
-                    result = crawler_handle => {
-                        report.swap(Box::new(CrawlerReport::Finished), Ordering::Relaxed);
-                        result?;
-                        terminal_handle.await??;
-                    },
-                };
-            }
-
-            Commands::Register { url, type_id } => {
-                let mut storage = Storage::new(&app_opts.database).await?;
-                storage.register_page(url.as_str(), type_id, 0).await?;
-            }
-
-            Commands::Navigate { page_id } => {
-                let storage = Storage::new(&app_opts.database).await?;
-                let parsers = PageParsers(create_dyn_python_parsers(parsers_path)?);
-                let content = storage.read_page_content(page_id).await?;
-                let page = storage.read_page(page_id).await?;
-                let (page, (content, _)) =
-                    page.zip(content).ok_or(AppError::PageNotFound(page_id))?;
-                for (link, type_id) in parsers.navigate(&page, &content)?.unwrap_or_default() {
-                    println!("{:3}  {}", type_id, link);
-                }
-            }
-
-            Commands::NavigateAll => {
-                let mut storage = Storage::new(&app_opts.database).await?;
-                let parsers = PageParsers(create_dyn_python_parsers(parsers_path)?);
-                // Need to buffer all found page links so iterating over downloaded pages doesn't
-                // interfere with page registering process
-                let mut links = vec![];
-
-                let mut pages = storage.read_downloaded_pages();
-                while let Some(row) = pages.next().await {
-                    let (page, content) = row?;
-                    let page_links = parsers.navigate(&page, &content)?;
-                    links.push((page.depth, page_links));
-                }
-                drop(pages);
-
-                for (page_depth, page_links) in links {
-                    for (link, type_id) in page_links.unwrap_or_default() {
-                        storage
-                            .register_page(link.as_str(), type_id, page_depth)
-                            .await?;
-                    }
-                }
-            }
-
-            Commands::Parse { name, page_id } => {
-                let storage = Storage::new(&app_opts.database).await?;
-                let parsers = PageParsers(create_dyn_python_parsers(parsers_path)?);
-                let (content, type_id) = storage
-                    .read_page_content(page_id)
-                    .await?
-                    .ok_or(AppError::PageNotFound(page_id))?;
-                let pairs = parsers.parse(type_id, &content)?.unwrap_or_default();
-                for (key, value) in pairs.into_iter().filter(key_contains(&name)) {
-                    println!("{}: {}", &key, &value)
-                }
-            }
-
-            Commands::ExportCsv { name } => {
-                let storage = Storage::new(&app_opts.database).await?;
-                let parsers = PageParsers(create_dyn_python_parsers(parsers_path)?);
-                let mut table = Table::default();
-                let mut pages = storage.read_downloaded_pages();
-
-                while let Some(row) = pages.next().await {
-                    let (page, content) = row?;
-                    let pairs = parsers
-                        .parse(page.type_id, &content)?
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter(key_contains(&name));
-                    table.add_row(pairs);
-                }
-                table.write(&mut stdout())?;
-            }
-
-            Commands::ListPages { no_header } => {
-                let storage = Storage::new(&app_opts.database).await?;
-                if !no_header {
-                    println!(
-                        "{:>7}  {:>7}  {:>5}  {:<15}  {:<20}",
-                        "id", "type_id", "depth", "status", "url"
-                    );
-                    println!("{}", "-".repeat(120));
-                }
-                for page in storage.list_pages().await? {
-                    println!(
-                        "{:>7}  {:>7}  {:>5}  {:<15}  {:<20}",
-                        page.id, page.type_id, page.depth, page.status, page.url
-                    )
-                }
-            }
-
-            Commands::Validate { reset } => {
-                let storage = Storage::new(&app_opts.database).await?;
-                let parsers = PageParsers(create_dyn_python_parsers(parsers_path)?);
-
-                let mut invalid_pages = vec![];
-                let mut pages = storage.read_downloaded_pages();
-                while let Some(row) = pages.next().await {
-                    let (page, content) = row?;
-                    if !parsers.validate(page.type_id, &content)? {
-                        println!("{}\t{}", page.id, page.url);
-                        invalid_pages.push(page.id);
-                    }
-                }
-
-                // Page reset should be done after page iteration process is completed.
-                // Lock timeout will be generated otherwise.
-                if reset {
-                    drop(pages);
-                    for page_id in invalid_pages.into_iter() {
-                        storage.reset_page(page_id).await?;
-                    }
-                }
-            }
-
-            Commands::Dump { page_id } => {
-                let storage = Storage::new(&app_opts.database).await?;
-                let (content, _) = storage
-                    .read_page_content(page_id)
-                    .await?
-                    .ok_or(AppError::PageNotFound(page_id))?;
-                println!("{}", content);
-            }
-
-            Commands::Reset { page_id } => {
-                let storage = Storage::new(&app_opts.database).await?;
-                storage.reset_page(page_id).await?
-            }
-
-            Commands::Parsers => {
-                println!(
-                    "{:<25}   {:>8}   {:<12} {:<12} {:<12}",
-                    "MODULE NAME", "TYPE ID", "NAVIGATION", "PARSING", "VALIDATION"
-                );
-                for parser in create_python_parsers(parsers_path)? {
-                    println!(
-                        "{:<25}   {:>8}   {:<12} {:<12} {:<12}",
-                        parser.module_name(),
-                        parser.page_type_id(),
-                        label(parser.support_navigation(), "yes", "no"),
-                        label(parser.support_parsing(), "yes", "no"),
-                        label(parser.support_validation(), "yes", "no")
-                    )
+            for (page_depth, page_links) in links {
+                for (link, type_id) in page_links.unwrap_or_default() {
+                    storage
+                        .register_page(link.as_str(), type_id, page_depth)
+                        .await?;
                 }
             }
         }
 
-        Ok(())
+        Commands::Parse { name, page_id } => {
+            let (_, storage, parsers) = read_env(&app_opts).await?;
+            let (content, type_id) = storage
+                .read_page_content(*page_id)
+                .await?
+                .ok_or(AppError::PageNotFound(*page_id))?;
+            let pairs = parsers.parse(type_id, &content)?.unwrap_or_default();
+            for (key, value) in pairs.into_iter().filter(key_contains(&name)) {
+                println!("{}: {}", &key, &value)
+            }
+        }
+
+        Commands::ExportCsv { name } => {
+            let (_, storage, parsers) = read_env(&app_opts).await?;
+            let mut table = Table::default();
+            let mut pages = storage.read_downloaded_pages();
+
+            while let Some(row) = pages.next().await {
+                let (page, content) = row?;
+                let pairs = parsers
+                    .parse(page.type_id, &content)?
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(key_contains(&name));
+                table.add_row(pairs);
+            }
+            table.write(&mut stdout())?;
+        }
+
+        Commands::ListPages { no_header } => {
+            let (_, storage, _) = read_env(&app_opts).await?;
+            if !no_header {
+                println!(
+                    "{:>7}  {:>7}  {:>5}  {:<15}  {:<20}",
+                    "id", "type_id", "depth", "status", "url"
+                );
+                println!("{}", "-".repeat(120));
+            }
+            for page in storage.list_pages().await? {
+                println!(
+                    "{:>7}  {:>7}  {:>5}  {:<15}  {:<20}",
+                    page.id, page.type_id, page.depth, page.status, page.url
+                )
+            }
+        }
+
+        Commands::Validate { reset } => {
+            let (_, storage, parsers) = read_env(&app_opts).await?;
+
+            let mut invalid_pages = vec![];
+            let mut pages = storage.read_downloaded_pages();
+            while let Some(row) = pages.next().await {
+                let (page, content) = row?;
+                if !parsers.validate(page.type_id, &content)? {
+                    println!("{}\t{}", page.id, page.url);
+                    invalid_pages.push(page.id);
+                }
+            }
+
+            // Page reset should be done after page iteration process is completed.
+            // Lock timeout will be generated otherwise.
+            if *reset {
+                drop(pages);
+                for page_id in invalid_pages.into_iter() {
+                    storage.reset_page(page_id).await?;
+                }
+            }
+        }
+
+        Commands::Dump { page_id } => {
+            let (_, storage, _) = read_env(&app_opts).await?;
+            let (content, _) = storage
+                .read_page_content(*page_id)
+                .await?
+                .ok_or(AppError::PageNotFound(*page_id))?;
+            println!("{}", content);
+        }
+
+        Commands::Reset { page_id } => {
+            let (_, storage, _) = read_env(&app_opts).await?;
+            storage.reset_page(*page_id).await?
+        }
+
+        Commands::Parsers => {
+            println!(
+                "{:<25}   {:>8}   {:<12} {:<12} {:<12}",
+                "MODULE NAME", "TYPE ID", "NAVIGATION", "PARSING", "VALIDATION"
+            );
+            for parser in create_python_parsers(&app_opts.workspace)? {
+                println!(
+                    "{:<25}   {:>8}   {:<12} {:<12} {:<12}",
+                    parser.module_name(),
+                    parser.page_type_id(),
+                    label(parser.support_navigation(), "yes", "no"),
+                    label(parser.support_parsing(), "yes", "no"),
+                    label(parser.support_validation(), "yes", "no")
+                )
+            }
+        }
     }
+
+    Ok(())
 }
 
 fn label<'a>(v: bool, yes: &'a str, no: &'a str) -> &'a str {

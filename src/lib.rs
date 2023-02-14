@@ -2,7 +2,8 @@ use anyhow::Context;
 use atom::Atom;
 use crawler::CrawlerState;
 use prelude::*;
-use std::{collections::HashMap, sync::Arc};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 pub use storage::Page;
 use url::Url;
 
@@ -48,6 +49,15 @@ pub mod prelude {
         #[error("Unable to create parser from file {}", .0.display())]
         UnableToCreateParser(PathBuf),
 
+        #[error("Reading config {}", .0.display())]
+        ReadingConfig(PathBuf),
+
+        #[error("Opening database")]
+        OpeningDatabase,
+
+        #[error("Loading python parsers")]
+        LoadingPythonParsers,
+
         #[error("Parser for page type {} failed", .0)]
         PageParserFailed(PageTypeId),
     }
@@ -55,6 +65,46 @@ pub mod prelude {
 
 pub type PageTypeId = u8;
 pub type Pairs = HashMap<String, String>;
+
+#[derive(Deserialize, Serialize)]
+pub struct CrawlerConfig {
+    /// number of threads
+    pub(crate) threads: usize,
+
+    /// delay between requests in one thread
+    pub(crate) delay_sec: f32,
+
+    pub(crate) read_timeout_sec: Option<f32>,
+
+    pub(crate) connect_timeout_sec: Option<f32>,
+
+    /// path to proxies list
+    pub(crate) proxies: Option<PathBuf>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct CrabConfig {
+    pub database: PathBuf,
+    pub crawler: CrawlerConfig,
+}
+
+impl CrabConfig {
+    /// Returns config for a new workspace
+    ///
+    /// This method doesn't use [`Default`] trait intentionally.
+    pub fn default_config() -> Self {
+        Self {
+            database: PathBuf::from("./db.sqlite"),
+            crawler: CrawlerConfig {
+                threads: 1,
+                delay_sec: 5.,
+                read_timeout_sec: Some(10.),
+                connect_timeout_sec: Some(10.),
+                proxies: None,
+            },
+        }
+    }
+}
 
 /// Base type allowing user to provide parsing rules
 pub trait PageParser {
