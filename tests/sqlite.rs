@@ -51,13 +51,12 @@ pub async fn read_downloaded_pages() -> Result<()> {
     storage.write_page_content(new_id, expected_content).await?;
 
     let mut pages = storage.read_downloaded_pages();
-    if let Some(row) = pages.next().await {
-        let (page, content) = row?;
-        assert_eq!(page.id, new_id);
-        assert_eq!(content, expected_content);
-    } else {
+    let Some(row) = pages.next().await else {
         panic!("No pages found");
-    }
+    };
+    let (page, content) = row?;
+    assert_eq!(page.id, new_id);
+    assert_eq!(content, expected_content);
 
     Ok(())
 }

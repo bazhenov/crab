@@ -49,22 +49,24 @@ impl Proxies {
 
     /// Called when proxy failed to process a request
     pub(crate) fn proxy_failed(&mut self, proxy_id: ProxyId) {
-        if let Some((proxy, stat)) = self.proxies.get_mut(proxy_id) {
-            stat.requests += 1;
-            stat.alive_counter -= 1;
-            if stat.alive_counter.state() == CounterState::SaturatedDown {
-                info!("Proxy found dead: {:?}", proxy);
-            }
+        let Some((proxy, stat)) = self.proxies.get_mut(proxy_id) else {
+            return;
+        };
+        stat.requests += 1;
+        stat.alive_counter -= 1;
+        if stat.alive_counter.state() == CounterState::SaturatedDown {
+            info!("Proxy found dead: {:?}", proxy);
         }
     }
 
     /// Called when proxy successfully process a request
     pub(crate) fn proxy_succeseed(&mut self, proxy_id: ProxyId) {
-        if let Some((_, stat)) = self.proxies.get_mut(proxy_id) {
-            stat.requests += 1;
-            stat.successfull_requests += 1;
-            stat.alive_counter += 1;
-        }
+        let Some((_, stat)) = self.proxies.get_mut(proxy_id) else {
+            return
+        };
+        stat.requests += 1;
+        stat.successfull_requests += 1;
+        stat.alive_counter += 1;
     }
 
     pub(crate) fn stat(&self) -> Vec<(Proxy, ProxyStat)> {

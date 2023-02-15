@@ -53,62 +53,59 @@ impl PythonPageParser {
 
 impl PageParser for PythonPageParser {
     fn navigate(&self, content: &str) -> Result<Option<Vec<(String, crate::PageTypeId)>>> {
-        if let Some(navigate) = &self.navigate_func {
-            let list = Python::with_gil(|py| {
-                let args = PyTuple::new(py, [content]);
-                let result = navigate.call1(py, args)?;
-                let mut urls = vec![];
-                for tuple in result.downcast::<PyList>(py)? {
-                    let url = tuple.get_item(0)?.extract::<String>()?;
-                    let type_id = tuple.get_item(1)?.extract::<u8>()?;
-                    urls.push((url, type_id));
-                }
-                Ok::<_, PyErr>(urls)
-            })?;
+        let Some(navigate) = &self.navigate_func else {
+            return Ok(None)
+        };
+        let list = Python::with_gil(|py| {
+            let args = PyTuple::new(py, [content]);
+            let result = navigate.call1(py, args)?;
+            let mut urls = vec![];
+            for tuple in result.downcast::<PyList>(py)? {
+                let url = tuple.get_item(0)?.extract::<String>()?;
+                let type_id = tuple.get_item(1)?.extract::<u8>()?;
+                urls.push((url, type_id));
+            }
+            Ok::<_, PyErr>(urls)
+        })?;
 
-            Ok(Some(list))
-        } else {
-            Ok(None)
-        }
+        Ok(Some(list))
     }
 
     fn parse(&self, content: &str) -> Result<Option<ParsedTables>> {
-        if let Some(parse) = &self.parse_func {
-            let tables = Python::with_gil(|py| {
-                let args = PyTuple::new(py, [content]);
-                let return_value = parse.call1(py, args)?;
-                let return_value = return_value.downcast::<PyDict>(py)?;
+        let Some(parse) = &self.parse_func else {
+            return Ok(None)
+        };
+        let tables = Python::with_gil(|py| {
+            let args = PyTuple::new(py, [content]);
+            let return_value = parse.call1(py, args)?;
+            let return_value = return_value.downcast::<PyDict>(py)?;
 
-                let mut tables = HashMap::new();
-                for (table_name, table) in return_value.into_iter() {
-                    let table_name = table_name.extract::<String>()?;
-                    let mut rows = vec![];
-                    for row in table.downcast::<PyList>()? {
-                        rows.push(to_hashmap(row.downcast::<PyDict>()?)?);
-                    }
-                    tables.insert(table_name, rows);
+            let mut tables = HashMap::new();
+            for (table_name, table) in return_value.into_iter() {
+                let table_name = table_name.extract::<String>()?;
+                let mut rows = vec![];
+                for row in table.downcast::<PyList>()? {
+                    rows.push(to_hashmap(row.downcast::<PyDict>()?)?);
                 }
-                Ok::<_, PyErr>(tables)
-            })?;
+                tables.insert(table_name, rows);
+            }
+            Ok::<_, PyErr>(tables)
+        })?;
 
-            Ok(Some(tables))
-        } else {
-            Ok(None)
-        }
+        Ok(Some(tables))
     }
 
     fn validate(&self, content: &str) -> Result<bool> {
-        if let Some(validate) = &self.validate_func {
-            let valid = Python::with_gil(|py| {
-                let args = PyTuple::new(py, [content]);
-                let result = validate.call1(py, args)?;
-                let valid = result.extract::<bool>(py)?;
-                Ok::<_, PyErr>(valid)
-            })?;
-            Ok(valid)
-        } else {
-            Ok(true)
-        }
+        let Some(validate) = &self.validate_func else {
+            return Ok(true)
+        };
+        let valid = Python::with_gil(|py| {
+            let args = PyTuple::new(py, [content]);
+            let result = validate.call1(py, args)?;
+            let valid = result.extract::<bool>(py)?;
+            Ok::<_, PyErr>(valid)
+        })?;
+        Ok(valid)
     }
 
     fn page_type_id(&self) -> crate::PageTypeId {

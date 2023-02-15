@@ -51,7 +51,7 @@ pub async fn run_crawler(
 
     report.swap(Box::new(state.clone().into()), Ordering::Relaxed);
 
-    loop {
+    'scheduler: loop {
         // REPORTING PHASE
         if last_report_time.elapsed() >= report_tick {
             let mut state = state.clone();
@@ -79,7 +79,7 @@ pub async fn run_crawler(
             state.requests_in_flight.insert(next_page.clone());
 
             let future = tokio::spawn(async move {
-                let content = fetch_content(client, next_page.url.clone(), delay).await;
+                let content = fetch_content(client, &next_page.url, delay).await;
                 (proxy_id, next_page, content)
             });
             futures.push(future);
@@ -87,38 +87,39 @@ pub async fn run_crawler(
 
         // COMPLETING PHASE
         if !futures.is_empty() {
-            if let Some(completed) = futures.next().await {
-                let (proxy, page, response) = completed?;
-                state.requests_in_flight.remove(&page);
+            let Some(completed) = futures.next().await else {
+                continue 'scheduler;
+            };
+            let (proxy, page, response) = completed?;
+            state.requests_in_flight.remove(&page);
 
-                let success = match response {
-                    Ok(content) => {
-                        let valid_page = parsers.validate(page.type_id, &content)?;
-                        if valid_page {
-                            state.successfull_requests += 1;
-                            storage.write_page_content(page.id, &content).await?;
+            let success = match response {
+                Ok(content) => {
+                    let valid_page = parsers.validate(page.type_id, &content)?;
+                    if valid_page {
+                        state.successfull_requests += 1;
+                        storage.write_page_content(page.id, &content).await?;
 
-                            if navigate {
-                                navigate_page(&parsers, &page, &content, &mut storage, &mut state)
-                                    .await?;
-                            }
+                        if navigate {
+                            navigate_page(&parsers, &page, &content, &mut storage, &mut state)
+                                .await?;
                         }
+                    }
 
-                        valid_page
-                    }
-                    Err(e) => {
-                        debug!("Unable to download: {}", page.url);
-                        trace!("{}", e);
-                        false
-                    }
-                };
+                    valid_page
+                }
+                Err(e) => {
+                    debug!("Unable to download: {}", page.url);
+                    trace!("{}", e);
+                    false
+                }
+            };
 
-                if let Some(proxy) = proxy {
-                    if success {
-                        proxies.proxy_succeseed(proxy);
-                    } else {
-                        proxies.proxy_failed(proxy);
-                    }
+            if let Some(proxy) = proxy {
+                if success {
+                    proxies.proxy_succeseed(proxy);
+                } else {
+                    proxies.proxy_failed(proxy);
                 }
             }
         }
@@ -163,8 +164,8 @@ fn create_http_client(opts: &CrawlerConfig, proxy: Option<Proxy>) -> Result<Clie
     Ok(client)
 }
 
-async fn fetch_content(client: Client, url: Url, delay: Duration) -> Result<String> {
-    trace!("Starting: {}", &url);
+async fn fetch_content(client: Client, url: &Url, delay: Duration) -> Result<String> {
+    trace!("Starting: {}", url);
     let instant = Instant::now();
     let response = download(client, url.as_ref()).await;
     if response.is_ok() {

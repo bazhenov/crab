@@ -342,12 +342,6 @@ fn label<'a>(v: bool, yes: &'a str, no: &'a str) -> &'a str {
     }
 }
 
-/// Initialize python environment and create python parser.
-///
-/// Python parsers created using following convention:
-/// * each parser is located in separate python file in current working directory;
-/// * each parser should be named `{type_id}_name.py`, where `type_id` is [`PageTypeId`] of a parser
-/// (eg. `1_listing_page.py`).
 fn create_dyn_python_parsers(path: impl AsRef<Path>) -> Result<Vec<Box<dyn PageParser>>> {
     Ok(create_python_parsers(path)?
         .into_iter()
@@ -362,39 +356,43 @@ fn heap_allocate<T: PageParser + 'static>(parser: T) -> Box<dyn PageParser> {
 /// Initialize python environment and create python parser.
 ///
 /// Python parsers created using following convention:
-/// * each parser is located in separate python file in current working directory;
-/// * each parser should be named `{type_id}_name.py`, where `type_id` is [`PageTypeId`] of a parser
-/// (eg. `1_listing_page.py`).
+/// * each parser is a separate python file in the current working directory;
+/// * each parser must be named as `parser_*.py`
+/// * each parser must have module-level constant `TYPE_ID: int` with [`PageTypeId`] of the parser
 fn create_python_parsers(path: impl AsRef<Path>) -> Result<Vec<PythonPageParser>> {
     python::prepare();
     let mut parsers = vec![];
     for path in fs::read_dir(path)? {
         let path = path?;
-        let file_name = path.file_name();
-        let file_name = file_name.to_str().unwrap_or_default();
-        if path.path().is_file() && file_name.starts_with("parser_") {
-            if let Some(module_name) = file_name.strip_suffix(".py") {
-                trace!("Building parser from python file: {}", file_name);
-                let parser = PythonPageParser::new(module_name)
-                    .context(AppError::UnableToCreateParser(path.path()))?;
-                parsers.push(parser)
-            }
+        if !path.path().is_file() {
+            continue;
         }
+
+        let file_name = path.file_name();
+        let module_name = file_name
+            .to_str()
+            .filter(|f| f.starts_with("parser_"))
+            .and_then(|f| f.strip_suffix(".py"));
+        let Some(module_name) = module_name else {
+            continue;
+        };
+
+        trace!(
+            "Building parser from python file: {}",
+            path.path().display()
+        );
+        let parser = PythonPageParser::new(module_name)
+            .context(AppError::UnableToCreateParser(path.path()))?;
+        parsers.push(parser)
     }
     Ok(parsers)
 }
 
 /// Returns a closure for a filtering on a key contains a string
-fn column_contains<T>(needles: &[String]) -> impl Fn(&(String, T)) -> bool + '_ {
-    move |(key, _): &(String, T)| {
-        if needles.is_empty() {
-            true
-        } else {
-            let key = key.to_lowercase();
-            needles
-                .iter()
-                .map(|s| s.to_lowercase())
-                .any(|needle| key.contains(&needle))
-        }
+fn column_contains<S: AsRef<str>, T>(needles: &[S]) -> impl Fn(&(S, T)) -> bool + '_ {
+    fn eq_ignore_case<S: AsRef<str>>(s1: &S, s2: &S) -> bool {
+        s1.as_ref().eq_ignore_ascii_case(s2.as_ref())
     }
+
+    move |(key, _)| needles.is_empty() | needles.iter().any(|s| eq_ignore_case(s, key))
 }

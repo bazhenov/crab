@@ -141,16 +141,12 @@ impl Storage {
     }
 
     pub async fn read_page(&self, id: i64) -> Result<Option<Page>> {
-        let content: Option<PageRow> =
-            sqlx::query_as("SELECT id, url, type, depth, status FROM pages WHERE id = ?")
-                .bind(id)
-                .fetch_optional(&self.connection)
-                .await?;
-        if let Some(content) = content {
-            page_from_tuple(content).map(Some)
-        } else {
-            Ok(None)
-        }
+        sqlx::query_as("SELECT id, url, type, depth, status FROM pages WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.connection)
+            .await?
+            .map(page_from_tuple)
+            .transpose()
     }
 
     pub async fn read_page_content(&self, id: i64) -> Result<Option<(String, PageTypeId)>> {
