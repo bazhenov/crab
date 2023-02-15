@@ -13,9 +13,23 @@ def navigate(content: str) -> list[(str, int)]:
     return []
 
 
-def parse(content: str) -> dict[str, str]:
+def parse(content: str) -> dict[str, list[dict[str, str]]]:
     """
-    Returns parsed key-value pairs for a given page
+    Returns parsed tables of data from given page in form of
+    ```
+    {
+        'table1': [
+            {'col1': 'value', 'col2': 'value'},
+            {'col1': 'value', 'col3': 'value'},
+            ...
+        ],
+        'table2': [
+            {'col1': 'value', 'col2': 'value'},
+            {'col1': 'value', 'col3': 'value'},
+            ...
+        ]
+    }
+    ```
     """
     return {}
 

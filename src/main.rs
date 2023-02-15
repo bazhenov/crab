@@ -44,7 +44,7 @@ enum Commands {
         workspace: PathBuf,
     },
 
-    /// running crawler and download pages from internet
+    /// running crawler and download pages from the Internet
     RunCrawler {
         /// after downloading each page parse next pages
         #[arg(long, default_value = "false")]
@@ -57,24 +57,28 @@ enum Commands {
     /// run navigation rules on a given page and print outgoing links
     Navigate { page_id: i64 },
 
-    /// run navigation rules on all downloaded pages and writes found links back to pages database
+    /// run navigation rules on all downloaded pages and write found links back to the pages database
     NavigateAll,
 
-    /// run parsing rules on a given page and print results
+    /// run parsing rules on the given page and print results
     Parse {
+        /// list of comma separated column names to filter
         #[arg(short = 'n')]
         columns: Vec<String>,
+        // page id to parse
         page_id: i64,
     },
 
     /// run parsing rules on all pages and exports CSV
     ExportTable {
+        /// list of comma separated column names to filter
         #[arg(short = 'n')]
         columns: Vec<String>,
+        /// table name to print
         table: String,
     },
 
-    /// list pages in database
+    /// list pages in the database
     ListPages {
         /// disable header output
         #[arg(short = 'n', long, default_value_t = false)]

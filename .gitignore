@@ -2,4 +2,5 @@
 *.sqlite
 /*.csv
 /proxies.list
+/.cargo/config.toml
 __pycache__

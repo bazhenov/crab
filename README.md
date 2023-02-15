@@ -175,17 +175,15 @@ So it's page #3 with page type id 2. Let's create new parser for those type of p
 from bs4 import BeautifulSoup
 TYPE_ID: int = 2
 
-def parse(content: str) -> dict[str, str]:
+def parse(content: str) -> dict[str, list[dict[str, str]]]:
     html = BeautifulSoup(content, 'html.parser')
-    result = {}
-    id = 0
+    
     title = html.select_one("nav h1")
-    if title:
-      result['title'] = title.text.strip()
-    for quote in html.select('#quotesList a div'):
-      id += 1
-      result[f"quote-{id}"] = quote.text.strip()
-    return result
+    author = title.text.strip() if title else ''
+
+    quotes = html.select('#quotesList a div')
+    quotes = [{'author': author, 'quote': q.text.strip()} for q in quotes]
+    return {'quotes': quotes}
 ```
 
 All parser filenames must start with `parser_` prefix and contains `TYPE_ID` constant indicating for which pages this parser is suposed for.
@@ -194,23 +192,22 @@ Now let's run parser logic on a page
 
 ```
 $ crab parse 3
-quote-29: The reason we want to go on and on is because we live in an impoverished present.
-quote-47: The moralist is the person who tells people that they ought to be unselfish, when they still feel like egos, and his efforts are always and invariably futile.
-quote-11: Never pretend to a love which you do not actually feel, for love is not ours to command.
-quote-32: The myths underlying our culture and underlying our common sense have not taught us to feel identical with the universe, but only parts of it, only in it, only confronting it - aliens.
-quote-2: To have faith is to trust yourself to the water. When you swim you don't grab hold of the water, because if you do you will sink and drown. Instead you relax, and float.
-quote-12: But the attitude of faith is to let go, and become open to truth, whatever it might turn out to be.
-quote-20: But I'll tell you what hermits realize. If you go off into a far, far forest and get very quiet, you'll come to understand that you're connected with everything.
-quote-45: If you study the writings of the mystics, you will always find things in them that appear to be paradoxes, as in Zen, particularly.
-quote-43: Buddhism has in it no idea of there being a moral law laid down by somekind of cosmic lawgiver.
-quote-14: So then, the relationship of self to other is the complete realization that loving yourself is impossible without loving everything defined as other than yourself.
-quote-7: The ego is nothing other than the focus of conscious attention.
+quotes
+------------------------
+- author: Alan Watts Quotes
+  quote: The only way to make sense out of change is to plunge into it, move with it, and join the dance.
+- author: Alan Watts Quotes
+  quote: To have faith is to trust yourself to the water. When you swim you don't grab hold of the water, because if you do you will sink and drown. Instead you relax, and float.
+- author: Alan Watts Quotes
+  quote: I have realized that the past and future are real illusions, that they exist in the present, which is what there is and all there is.
+- author: Alan Watts Quotes
+  quote: No work or love will flourish out of guilt, fear, or hollowness of heart, just as no valid plans for the future can be made by those who have no capacity for living now.
 ```
 
 ### Exporting as a CSV
 
 ```
-$ crab export-csv
+$ crab export-table quotes
 ```
 
 Exports all the quotes in a CSV format
@@ -219,5 +216,5 @@ Exports all the quotes in a CSV format
 
 So when you are write all the logic for navigating pages you need basically do following steps:
 
-1. `crab navigate all` - will run naviagtion rules on all the pages and discover new links
-2. `crab run-crawler --navigate` to downloaded all the pages. Note `--navigate` flag. By default crawler will download pages already in database but will not apply navigation rules to downloaded pages, so no new pages will be discovered. But if you pass this flag downloading and discovering will run simultaneiously.
+1. `crab navigate-all` - will run naviagtion rules on all the pages and discover new links
+2. `crab run-crawler --navigate` to downloaded all the pages. Crawler will not apply navigation rules to freshly downloaded pages, by default. So no new pages will be discovered. But if you pass `--navigate` downloading and discovering will run simultaneiously.
