@@ -64,7 +64,8 @@ pub mod prelude {
 }
 
 pub type PageTypeId = u8;
-pub type Pairs = HashMap<String, String>;
+pub type ParsedTable = Vec<HashMap<String, String>>;
+pub type ParsedTables = HashMap<String, ParsedTable>;
 
 #[derive(Deserialize, Serialize)]
 pub struct CrawlerConfig {
@@ -112,7 +113,7 @@ pub trait PageParser {
     fn navigate(&self, content: &str) -> Result<Option<Vec<(String, PageTypeId)>>>;
 
     /// Returns parsed key-value pairs for the page]
-    fn parse(&self, content: &str) -> Result<Option<Pairs>>;
+    fn parse(&self, content: &str) -> Result<Option<ParsedTables>>;
 
     /// Validates page content
     ///
@@ -136,7 +137,7 @@ impl PageParsers {
     }
 
     /// Returns parsed key-value pairs for the page
-    pub fn parse(&self, type_id: PageTypeId, content: &str) -> Result<Option<Pairs>> {
+    pub fn parse(&self, type_id: PageTypeId, content: &str) -> Result<Option<ParsedTables>> {
         page_parser(&self.0[..], type_id)?
             .parse(content)
             .context(AppError::PageParserFailed(type_id))

@@ -25,7 +25,7 @@ mod terminal;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Opts {
-    #[arg(short, long, value_name = "file", default_value = ".")]
+    #[arg(short = 'w', default_value = ".")]
     workspace: PathBuf,
 
     #[command(subcommand)]
@@ -62,15 +62,16 @@ enum Commands {
 
     /// run parsing rules on a given page and print results
     Parse {
-        #[arg(short, long)]
-        name: Vec<String>,
+        #[arg(short = 'n')]
+        columns: Vec<String>,
         page_id: i64,
     },
 
     /// run parsing rules on all pages and exports CSV
-    ExportCsv {
-        #[arg(short, long)]
-        name: Vec<String>,
+    ExportTable {
+        #[arg(short = 'n')]
+        columns: Vec<String>,
+        table: String,
     },
 
     /// list pages in database
@@ -217,33 +218,41 @@ async fn entrypoint() -> Result<()> {
             }
         }
 
-        Commands::Parse { name, page_id } => {
+        Commands::Parse { columns, page_id } => {
             let (_, storage, parsers) = read_env(&app_opts).await?;
             let (content, type_id) = storage
                 .read_page_content(*page_id)
                 .await?
                 .ok_or(AppError::PageNotFound(*page_id))?;
-            let pairs = parsers.parse(type_id, &content)?.unwrap_or_default();
-            for (key, value) in pairs.into_iter().filter(key_contains(name)) {
-                println!("{}: {}", &key, &value)
+            let tables = parsers.parse(type_id, &content)?.unwrap_or_default();
+            for (table_name, table) in tables.into_iter() {
+                println!("{table_name}");
+                println!("------------------------");
+                for row in table.into_iter() {
+                    let columns = row.into_iter().filter(column_contains(columns));
+                    for (idx, (column, value)) in columns.enumerate() {
+                        let prefix = if idx == 0 { "-" } else { " " };
+                        println!("{} {}: {}", prefix, &column, &value);
+                    }
+                }
+                println!();
             }
         }
 
-        Commands::ExportCsv { name } => {
+        Commands::ExportTable { table, columns } => {
             let (_, storage, parsers) = read_env(&app_opts).await?;
-            let mut table = Table::default();
+            let mut csv = Table::default();
             let mut pages = storage.read_downloaded_pages();
 
             while let Some(row) = pages.next().await {
                 let (page, content) = row?;
-                let pairs = parsers
-                    .parse(page.type_id, &content)?
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(key_contains(name));
-                table.add_row(pairs);
+                let mut tables = parsers.parse(page.type_id, &content)?.unwrap_or_default();
+                let table = tables.remove(table).unwrap_or_default();
+                for row in table.into_iter() {
+                    csv.add_row(row.into_iter().filter(column_contains(columns)));
+                }
             }
-            table.write(&mut stdout())?;
+            csv.write(&mut stdout())?;
         }
 
         Commands::ListPages { no_header } => {
@@ -372,7 +381,7 @@ fn create_python_parsers(path: impl AsRef<Path>) -> Result<Vec<PythonPageParser>
 }
 
 /// Returns a closure for a filtering on a key contains a string
-fn key_contains<T>(needles: &[String]) -> impl Fn(&(String, T)) -> bool + '_ {
+fn column_contains<T>(needles: &[String]) -> impl Fn(&(String, T)) -> bool + '_ {
     move |(key, _): &(String, T)| {
         if needles.is_empty() {
             true

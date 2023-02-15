@@ -1,4 +1,4 @@
-use crate::{prelude::*, PageParser, PageTypeId, Pairs};
+use crate::{prelude::*, PageParser, PageTypeId, ParsedTables};
 use pyo3::{
     prelude::*,
     types::{PyDict, PyList, PyTuple},
@@ -72,23 +72,26 @@ impl PageParser for PythonPageParser {
         }
     }
 
-    fn parse(&self, content: &str) -> Result<Option<Pairs>> {
+    fn parse(&self, content: &str) -> Result<Option<ParsedTables>> {
         if let Some(parse) = &self.parse_func {
-            let pairs = Python::with_gil(|py| {
+            let tables = Python::with_gil(|py| {
                 let args = PyTuple::new(py, [content]);
-                let result = parse.call1(py, args)?;
-                let dict = result.downcast::<PyDict>(py)?;
+                let return_value = parse.call1(py, args)?;
+                let return_value = return_value.downcast::<PyDict>(py)?;
 
-                let mut pairs = HashMap::new();
-                for (key, value) in dict.into_iter() {
-                    let key = key.extract::<String>()?;
-                    let value = value.extract::<String>()?;
-                    pairs.insert(key, value);
+                let mut tables = HashMap::new();
+                for (table_name, table) in return_value.into_iter() {
+                    let table_name = table_name.extract::<String>()?;
+                    let mut rows = vec![];
+                    for row in table.downcast::<PyList>()? {
+                        rows.push(to_hashmap(row.downcast::<PyDict>()?)?);
+                    }
+                    tables.insert(table_name, rows);
                 }
-                Ok::<_, PyErr>(pairs)
+                Ok::<_, PyErr>(tables)
             })?;
 
-            Ok(Some(pairs))
+            Ok(Some(tables))
         } else {
             Ok(None)
         }
@@ -111,6 +114,16 @@ impl PageParser for PythonPageParser {
     fn page_type_id(&self) -> crate::PageTypeId {
         self.page_type_id
     }
+}
+
+fn to_hashmap(input: &PyDict) -> StdResult<HashMap<String, String>, PyErr> {
+    let mut result = HashMap::new();
+    for (column, value) in input.iter() {
+        let column = column.extract::<String>()?;
+        let value = value.extract::<String>()?;
+        result.insert(column, value);
+    }
+    Ok(result)
 }
 
 pub fn prepare() {
