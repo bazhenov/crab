@@ -64,7 +64,7 @@ jobs:
           os: ubuntu-20.04
           install-dist: curl --proto '=https' --tlsv1.2 -L -sSf https://github.com/axodotdev/cargo-dist/releases/download/v0.0.2/installer.sh | sh
         - target: x86_64-apple-darwin
-          os: macos-11
+          os: macos-12
           install-dist: curl --proto '=https' --tlsv1.2 -L -sSf https://github.com/axodotdev/cargo-dist/releases/download/v0.0.2/installer.sh | sh
         - target: x86_64-pc-windows-msvc
           os: windows-2019
