@@ -1,0 +1,8 @@
+- name: run
+  cmd: cargo
+  args: [run]
+  key: j
+- name: Docker build
+  cmd: docker
+  args: [build, -t, crab, .]
+  key: d
