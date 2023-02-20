@@ -39,10 +39,7 @@ enum Commands {
     Migrate,
 
     /// create new parsing environment
-    New {
-        /// path to workspace
-        workspace: PathBuf,
-    },
+    Init,
 
     /// running crawler and download pages from the Internet
     RunCrawler {
@@ -133,8 +130,8 @@ async fn entrypoint() -> Result<()> {
     let app_opts = Opts::parse();
 
     match &app_opts.command {
-        Commands::New { workspace } => {
-            fs::create_dir(workspace)?;
+        Commands::Init => {
+            let workspace = Path::new(".");
 
             let config = CrabConfig::default_config();
             fs::write(workspace.join("crab.toml"), toml::to_string(&config)?)?;

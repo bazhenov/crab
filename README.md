@@ -56,8 +56,8 @@ $ cargo install --path=.
 Let's write simple parser for brainyquote.com. Start a new project
 
 ```
-$ crab new brainyquote
-$ cd brainyquote
+$ mkdir brainyquote && cd brainyquote
+$ crab init
 $ ls
 crab.toml
 db.sqlite
