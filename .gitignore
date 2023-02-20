@@ -1,6 +1,6 @@
 /target
 *.sqlite
 /*.csv
-/proxies.list
+/output
 /.cargo/config.toml
 __pycache__

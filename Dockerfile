@@ -5,11 +5,10 @@ RUN --mount=type=cache,target=/var/cache/apt \
 
 FROM base AS builder
 ADD . /opt
-#ENV PYO3_CONFIG_FILE=/opt/docker/pyo3_config
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/opt/target \
-    cargo build --release
+    cargo install --path=/opt --locked --root=/opt
 
 FROM base AS runtime
-RUN --mount=type=cache,target=/opt/target cp /opt/target/release/crab /opt/crab
+COPY --from=builder /opt/bin/crab /opt/crab
 ENTRYPOINT ["/opt/crab"]
