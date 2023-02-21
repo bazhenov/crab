@@ -44,7 +44,9 @@ jobs:
 
     - name: Install Dependencies (MacOS)
       if: matrix.os == 'macos-11'
-      run: brew install python@3.11
+      run: |
+        brew install python@3.11
+        brew link python@3.11
     
     - name: Build Release
       run: |
