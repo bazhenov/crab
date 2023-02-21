@@ -6,7 +6,7 @@ permissions:
 on:
   push:
     tags:
-    - "v[0-9]+.[0-9]+.[0-9]+"
+    - "[0-9]+.[0-9]+.[0-9]+"
 
 jobs:
   create-release:
@@ -22,28 +22,38 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref }}
-          release_name: ${{ github.ref }}
+          release_name: v${{ github.ref }}
           draft: true
           prerelease: true
 
   build-and-upload:
     needs: create-release
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+        - target: x86_64-unknown-linux-gnu
+          os: ubuntu-22.04
+        - target: x86_64-apple-darwin
+          os: macos-11
+    runs-on: ${{ matrix.os}}
     steps:
     - uses: actions/checkout@v3
     
     - name: Install Rust
       run: rustup update stable && rustup default stable
     
-    - name: Create Release Archive
+    - name: Build Release
       run: |
         cargo install --path=. --locked --root=release
 
-        mkdir crab-0.1.0
-        cp release/bin/crab crab-0.1.0/
-        cp README.md crab-0.1.0/
+    - name: Create Release Archive
+      run: |
+        mkdir archive
+        cp release/bin/crab archive/
+        cp README.md archive/
+        mv archive crab-${{ github.ref }}-${{ matrix.target }}
 
-        tar czvf crab-0.1.0.tar.gz crab-0.1.0
+        tar czvf crab-${{ github.ref }}-${{ matrix.target }}.tar.gz crab-${{ github.ref }}-${{ matrix.target }}
 
     - name: Upload release archive
       uses: actions/upload-release-asset@v1.0.2
@@ -51,6 +61,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: crab-0.1.0.tar.gz
-        asset_name: crab-0.1.0.tar.gz
+        asset_path: crab-${{ github.ref }}-${{ matrix.target }}.tar.gz
+        asset_name: crab-${{ github.ref }}-${{ matrix.target }}.tar.gz
         asset_content_type: application/octet-stream
