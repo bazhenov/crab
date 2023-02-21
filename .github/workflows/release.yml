@@ -44,6 +44,7 @@ jobs:
     
     - name: Build Release
       run: |
+        echo "RELEASE_FQN=crab-${{ github.ref_name }}-${{ matrix.target }}" >> $GITHUB_ENV
         cargo install --path=. --locked --root=release
 
     - name: Create Release Archive
@@ -51,9 +52,8 @@ jobs:
         mkdir archive
         cp release/bin/crab archive/
         cp README.md archive/
-        mv archive crab-${{ github.ref }}-${{ matrix.target }}
-
-        tar czvf crab-${{ github.ref }}-${{ matrix.target }}.tar.gz crab-${{ github.ref }}-${{ matrix.target }}
+        mv archive ${RELEASE_FQN}
+        tar czvf ${RELEASE_FQN}.tar.gz ${RELEASE_FQN}
 
     - name: Upload release archive
       uses: actions/upload-release-asset@v1.0.2
@@ -61,6 +61,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: crab-${{ github.ref }}-${{ matrix.target }}.tar.gz
-        asset_name: crab-${{ github.ref }}-${{ matrix.target }}.tar.gz
+        asset_path: ${RELEASE_FQN}.tar.gz
+        asset_name: ${RELEASE_FQN}.tar.gz
         asset_content_type: application/octet-stream
