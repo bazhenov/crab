@@ -52,8 +52,8 @@ jobs:
         mkdir archive
         cp release/bin/crab archive/
         cp README.md archive/
-        mv archive ${RELEASE_FQN}
-        tar czvf ${RELEASE_FQN}.tar.gz ${RELEASE_FQN}
+        mv archive ${{ env.RELEASE_FQN }}
+        tar czvf ${{ env.RELEASE_FQN }}.tar.gz ${{ env.RELEASE_FQN }}
 
     - name: Upload release archive
       uses: actions/upload-release-asset@v1.0.2
@@ -61,6 +61,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ${RELEASE_FQN}.tar.gz
-        asset_name: ${RELEASE_FQN}.tar.gz
+        asset_path: ${{ env.RELEASE_FQN }}.tar.gz
+        asset_name: ${{ env.RELEASE_FQN }}.tar.gz
         asset_content_type: application/octet-stream
