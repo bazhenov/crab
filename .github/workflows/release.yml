@@ -34,5 +34,21 @@ jobs:
   hello:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
+      
       - name: Install Rust
         run: rustup update stable && rustup default stable
+      
+      - name: Build Release
+        run: |
+          cargo install --path=. --locked --root=release
+
+          mkdir crab-0.1.0
+          cp release/bin/crab crab-0.1.0/
+          cp README.md crab-0.1.0/
+
+          tar czvf crab-0.1.0.tar.gz crab-0.1.0
+      - uses: actions/upload-artifact@v3
+        with:
+          name: dist-without-markdown
+          path: crab-0.1.0.tar.gz
