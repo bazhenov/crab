@@ -1,54 +1,56 @@
-# CI that:
-#
-# * checks for a Git Tag that looks like a release ("v1.2.0")
-# * creates a Github Release™️
-# * builds binaries/packages with cargo-dist
-# * uploads those packages to the Github Release™️
-#
-# Note that the Github Release™️ will be created before the packages,
-# so there will be a few minutes where the release has no packages
-# and then they will slowly trickle in, possibly failing. To make
-# this more pleasant we mark the release as a "draft" until all
-# artifacts have been successfully uploaded. This allows you to
-# choose what to do with partial successes and avoids spamming
-# anyone with notifications before the release is actually ready.
 name: Release
 
 permissions:
   contents: write
 
-# This task will run whenever you push a git tag that looks like
-# a version number. We just look for `v` followed by at least one number
-# and then whatever. so `v1`, `v1.0.0`, and `v1.0.0-prerelease` all work.
-#
-# If there's a prerelease-style suffix to the version then the Github Release™️
-# will be marked as a prerelease (handled by taiki-e/create-gh-release-action).
-#
-# Note that when generating links to uploaded artifacts, cargo-dist will currently
-# assume that your git tag is always v{VERSION} where VERSION is the version in
-# the published package's Cargo.toml (this is the default behaviour of cargo-release).
-# In the future this may be made more robust/configurable.
-on: [push]
+on:
+  push:
+    tags:
+    - "v[0-9]+.[0-9]+.[0-9]+"
 
 jobs:
-  hello:
+  create-release:
+    name: create-release
+    runs-on: ubuntu-22.04
+    outputs:
+      upload_url: ${{ steps.release.outputs.upload_url }}
+    steps:
+      - name: Create GitHub release
+        id: release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
+          draft: true
+          prerelease: true
+
+  build-and-upload:
+    needs: create-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
-      - name: Install Rust
-        run: rustup update stable && rustup default stable
-      
-      - name: Build Release
-        run: |
-          cargo install --path=. --locked --root=release
+    - uses: actions/checkout@v3
+    
+    - name: Install Rust
+      run: rustup update stable && rustup default stable
+    
+    - name: Create Release Archive
+      run: |
+        cargo install --path=. --locked --root=release
 
-          mkdir crab-0.1.0
-          cp release/bin/crab crab-0.1.0/
-          cp README.md crab-0.1.0/
+        mkdir crab-0.1.0
+        cp release/bin/crab crab-0.1.0/
+        cp README.md crab-0.1.0/
 
-          tar czvf crab-0.1.0.tar.gz crab-0.1.0
-      - uses: actions/upload-artifact@v3
-        with:
-          name: dist-without-markdown
-          path: crab-0.1.0.tar.gz
+        tar czvf crab-0.1.0.tar.gz crab-0.1.0
+
+    - name: Upload release archive
+      uses: actions/upload-release-asset@v1.0.2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: crab-0.1.0.tar.gz
+        asset_name: crab-0.1.0.tar.gz
+        asset_content_type: application/octet-stream
