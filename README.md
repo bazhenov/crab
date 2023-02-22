@@ -36,12 +36,18 @@ flowchart LR
 
 ## Installing
 
+### Mac OS
+
+```console
+$ brew install bazhenov/tap/crab
+```
+
+### Build from sources
 ### Prerequirements
 
 * rust toolchain
 * python 3
-
-At the moment no prebuilt binaries are available. To install crab you need to have rust toolchain installed
+* sqlite3
 
 ```
 $ git clone https://github.com/bazhenov/crab
