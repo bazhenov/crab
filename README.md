@@ -6,34 +6,6 @@ Parser-toolkit for fast and furious crawling and parsing sites on the Internet. 
 
 Nearly all parsers are written using try and error approach. If crawling and parsing are done together you are forced to download documents from Internet each time you change a parser. Crab tries to separate crawling logic from parsing logic and maintain localy stored mirror of pages you are parsing.
 
-## Architecture
-
-```mermaid
-flowchart LR
-  navigator
-  parser
-  tabulator
-  internet((Internet))
-  validator
-
-  subgraph db
-    pages[(Pages)]
-    links[(Links)]
-  end
-
-  subgraph rules
-    parser
-    navigator
-    validator
-  end
-
-  csv[(CSV)]
-
-  crawler --> pages
-  internet --> crawler --> validator --> navigator --> links --> pages
-  pages --> parser --> tabulator --> csv
-```
-
 ## Installing
 
 ### Mac OS
@@ -49,7 +21,7 @@ $ brew install bazhenov/tap/crab
 * python 3
 * sqlite3
 
-```
+```console
 $ git clone https://github.com/bazhenov/crab
 $ cd crab
 $ cargo install --path=.
@@ -61,7 +33,7 @@ $ cargo install --path=.
 
 Let's write simple parser for brainyquote.com. Start a new project
 
-```
+```console
 $ crab new brainyquote
 $ cd brainyquote
 $ ls
@@ -76,7 +48,7 @@ Crab creates main database file as well as skeleton of a python parser.
 
 Now let's register our first page in the database
 
-```
+```console
 $ crab register https://www.brainyquote.com/ 1
 ```
 
@@ -84,13 +56,13 @@ Here we provide URL and a page type. Each downloaded and parsed page has it's ow
 
 Now let's download first page using following command
 
-```
+```console
 $ crab run-crawler
 ```
 
 This command will download all not already downloaded pages in the database. In our case we have only one page. We can confirm it's downloaded using following command
 
-```
+```console
 $ crab list-pages
      id  type_id  depth  status           url
 ------------------------------------------------------------------------------------------------------------------------
@@ -99,7 +71,7 @@ $ crab list-pages
 
 This command allows to inspect state of all the pages in the database. We also can get the content of a page
 
-```
+```console
 $ crab dump 1
 
 <!DOCTYPE html>
@@ -138,7 +110,7 @@ Note that each url is tagged with number `2`. This is page type for a target pag
 
 We can now check if out rules are works correctly:
 
-```
+```console
 $ crab navigate 1
   2  https://www.brainyquote.com/authors/a-p-j-abdul-kalam-quotes
   2  https://www.brainyquote.com/authors/alan-watts-quotes
@@ -157,19 +129,19 @@ This command output all outging links found on a page #1 as well as theirs page 
 
 Now let's write all this outgoing links to the database:
 
-```
+```console
 $ crab navigate-all
 ```
 
 This command traverse all downloaded pages, apply navigation rules and writes discovered pages back to the database. After that we need to run crawler to downloaded them
 
-```
+```console
 $ crab run-crawler
 ```
 
 Now let's check for a page with Alan Watts quotes:
 
-```
+```console
 $ crab list-pages | grep -i watts
       3        2      0  downloaded       https://www.brainyquote.com/authors/alan-watts-quotes
 
@@ -196,7 +168,7 @@ All parser filenames must start with `parser_` prefix and contains `TYPE_ID` con
 
 Now let's run parser logic on a page
 
-```
+```console
 $ crab parse 3
 quotes
 ------------------------
@@ -212,7 +184,7 @@ quotes
 
 ### Exporting as a CSV
 
-```
+```console
 $ crab export-table quotes
 ```
 
@@ -224,3 +196,31 @@ So when you are write all the logic for navigating pages you need basically do f
 
 1. `crab navigate-all` - will run naviagtion rules on all the pages and discover new links
 2. `crab run-crawler --navigate` to downloaded all the pages. Crawler will not apply navigation rules to freshly downloaded pages, by default. So no new pages will be discovered. But if you pass `--navigate` downloading and discovering will run simultaneiously.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  navigator
+  parser
+  tabulator
+  internet((Internet))
+  validator
+
+  subgraph db
+    pages[(Pages)]
+    links[(Links)]
+  end
+
+  subgraph rules
+    parser
+    navigator
+    validator
+  end
+
+  csv[(CSV)]
+
+  crawler --> pages
+  internet --> crawler --> validator --> navigator --> links --> pages
+  pages --> parser --> tabulator --> csv
+```
