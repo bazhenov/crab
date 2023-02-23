@@ -50,15 +50,7 @@ jobs:
     - name: Build Release
       run: |
         echo "RELEASE_FQN=crab-${{ github.ref_name }}-${{ matrix.target }}" >> $GITHUB_ENV
-        cargo build --locked --release
-
-    - name: Patching linked libraries (MacOS)
-      if: matrix.os == 'macos-11'
-      # On a GHA runner specific configuration of PyO3 is needed because
-      # pyo3 is linked against standart python distribution in a /Library/Frameworks,
-      # instead of homebrew installed one
-      run: |
-        install_name_tool -change /Library/Frameworks/Python.framework/Versions/3.11/Python /usr/local/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python target/release/crab
+        PYO3_CONFIG_FILE="${GITHUB_WORKSPACE}/ci/macos-python-config" cargo build --locked --release
 
     - name: Create Release Archive
       run: |
